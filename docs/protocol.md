@@ -19,7 +19,7 @@ ordering, source-idle recovery, wake retries) see [streaming.md](streaming.md).
   - `anran` → ANRAN app identity on the CloudEdge API, VVP stream flag `1`
   - `cloudplus` → CloudPlus / CloudHome app/API, VVP stream flag `1`
   - `iegeek` → ieGeek app identity, VVP stream flag `1`
-  - `arenti` → Arenti app/API host family, VVP stream flag `1`
+  - `arenti` → Arenti app/API host family, VVP stream flag `0`
   - `boifun` → BoifunCam app identity, VVP stream flag `1`
 - Each profile supplies the official app's `sourceApp`, `partnerId`, version
   and version code. These values are part of login account encryption and are

@@ -302,21 +302,15 @@ class P2PStreamer(LiveSessionMixin):
             if self._audio_decrypt is False:
                 return parse_stream_frame(chunk)
 
-            if len(chunk) >= 0x34:
-                remaining = len(chunk) - 0x34
-                raw_dl = int.from_bytes(chunk[0x30:0x34], "little")
-                if 0 < raw_dl <= remaining and raw_dl < 2000:
-                    self._audio_decrypt = False
-                    return parse_stream_frame(chunk)
-                decrypted = decrypt_stream_frame(bytearray(chunk))
-                dec_dl = int.from_bytes(bytes(decrypted[0x30:0x34]), "little")
-                if 0 < dec_dl <= remaining and dec_dl < 2000:
-                    self._audio_decrypt = True
-                    return parse_stream_frame(bytes(decrypted))
-
-            self._audio_decrypt = True
-            decrypted = decrypt_stream_frame(bytearray(chunk))
-            return parse_stream_frame(bytes(decrypted))
+            raw = parse_stream_frame(chunk)
+            if raw is not None and raw.header_size == 0x34:
+                self._audio_decrypt = False
+                return raw
+            decrypted = bytes(decrypt_stream_frame(bytearray(chunk)))
+            parsed = parse_stream_frame(decrypted)
+            if parsed is not None:
+                self._audio_decrypt = True
+            return parsed
 
         return parse_stream_frame(chunk)
 

@@ -54,7 +54,7 @@ def _starts_annexb(data: bytes, offset: int) -> bool:
     return data[offset + 2] == 0 and data[offset + 3] == 1
 
 
-def _video_header_size(data: bytes, frame_type: int) -> int:
+def _video_header_size(data: bytes, frame_type: int) -> int | None:
     """Pick the video frame header size for the layout this frame uses.
 
     The compact layout places the elementary stream (and the encrypted region)
@@ -67,7 +67,7 @@ def _video_header_size(data: bytes, frame_type: int) -> int:
         return compact
     if _starts_annexb(data, extended):
         return extended
-    return extended
+    return None
 
 
 def _audio_header_size(data: bytes) -> int:
@@ -79,7 +79,7 @@ def _audio_header_size(data: bytes) -> int:
     """
     if len(data) >= AUDIO_HEADER_EXTENDED:
         data_len = struct.unpack_from("<I", data, 0x30)[0]
-        if 0 < data_len < 2000 and len(data) >= AUDIO_HEADER_EXTENDED + data_len:
+        if 0 < data_len < 2000 and len(data) == AUDIO_HEADER_EXTENDED + data_len:
             return AUDIO_HEADER_EXTENDED
     return AUDIO_HEADER_COMPACT
 
@@ -211,16 +211,18 @@ def _find_stream_start(data: bytes, start: int = 0) -> int:
 
 def _peek_video_total_len(frame: bytes, frame_type: int) -> int | None:
     enc_offset = 0x30 if frame_type == STREAM_TYPE_IFRAME else 0x28
-    header_size = 0x3C if frame_type == STREAM_TYPE_IFRAME else 0x34
     enc_len = _available_encrypted_len(
         len(frame), enc_offset, VIDEO_ENCRYPTED_HEADER_BYTES
     )
     if enc_len < 16:
         return None
     header = _des3_ecb_decrypt_block(bytes(frame[enc_offset : enc_offset + enc_len]))
+    _, extended = _VIDEO_HEADER_SIZES[frame_type]
+    if _starts_annexb(header, 0):
+        return None
     data_len = struct.unpack_from("<I", header, 8)[0]
     if 0 < data_len <= MAX_FRAME_DATA_BYTES:
-        return header_size + data_len
+        return extended + data_len
     return None
 
 
@@ -267,6 +269,8 @@ def parse_stream_frame(data: bytes):
         if len(data) < IFRAME_HEADER_COMPACT:
             return None
         header_size = _video_header_size(data, STREAM_TYPE_IFRAME)
+        if header_size is None:
+            return None
         sequence = struct.unpack_from("<I", data, 0x10)[0]
         timestamp_ms = struct.unpack_from("<I", data, header_size - 0x0C)[0]
         payload = _video_payload(data, header_size)
@@ -277,6 +281,8 @@ def parse_stream_frame(data: bytes):
         if len(data) < PFRAME_HEADER_COMPACT:
             return None
         header_size = _video_header_size(data, STREAM_TYPE_PFRAME)
+        if header_size is None:
+            return None
         sequence = struct.unpack_from("<I", data, 0x08)[0]
         timestamp_ms = struct.unpack_from("<I", data, header_size - 0x0C)[0]
         payload = _video_payload(data, header_size)
