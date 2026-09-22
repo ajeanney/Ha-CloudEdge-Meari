@@ -24,6 +24,82 @@ MAX_FRAME_DATA_BYTES = 8 * 1024 * 1024
 VIDEO_ENCRYPTED_HEADER_BYTES = 0x80
 _TLS = threading.local()
 
+# Meari-family cameras use one of two VVP media-frame header layouts. Both start
+# with the encrypted region at the *compact* offset; older/other firmware then
+# carries an extra 0x0C-byte plaintext sub-header (ending in a little-endian
+# payload length) before the elementary stream, giving the *extended* layout.
+# The elementary stream itself always begins with an Annex-B start code
+# (00 00 01 / 00 00 00 01), so we detect which layout a decrypted frame uses by
+# probing for that start code per frame (protocol.md: "choose per frame").
+IFRAME_HEADER_COMPACT = 0x30
+IFRAME_HEADER_EXTENDED = 0x3C
+PFRAME_HEADER_COMPACT = 0x28
+PFRAME_HEADER_EXTENDED = 0x34
+AUDIO_HEADER_COMPACT = 0x28
+AUDIO_HEADER_EXTENDED = 0x34
+_VIDEO_HEADER_SIZES = {
+    STREAM_TYPE_IFRAME: (IFRAME_HEADER_COMPACT, IFRAME_HEADER_EXTENDED),
+    STREAM_TYPE_PFRAME: (PFRAME_HEADER_COMPACT, PFRAME_HEADER_EXTENDED),
+}
+
+
+def _starts_annexb(data: bytes, offset: int) -> bool:
+    """Return true when an Annex-B NAL start code sits at ``offset``."""
+    if offset < 0 or offset + 4 > len(data):
+        return False
+    if data[offset] != 0 or data[offset + 1] != 0:
+        return False
+    if data[offset + 2] == 1:
+        return True
+    return data[offset + 2] == 0 and data[offset + 3] == 1
+
+
+def _video_header_size(data: bytes, frame_type: int) -> int:
+    """Pick the video frame header size for the layout this frame uses.
+
+    The compact layout places the elementary stream (and the encrypted region)
+    right after the fixed header; the extended layout inserts an extra 0x0C
+    plaintext sub-header first. Prefer the compact offset when its decrypted
+    bytes already start a NAL, else fall back to the extended offset.
+    """
+    compact, extended = _VIDEO_HEADER_SIZES[frame_type]
+    if _starts_annexb(data, compact):
+        return compact
+    if _starts_annexb(data, extended):
+        return extended
+    return extended
+
+
+def _audio_header_size(data: bytes) -> int:
+    """Pick the audio frame header size, mirroring the video-layout probe.
+
+    The extended layout carries a little-endian payload length at 0x30 and the
+    G.711 payload at 0x34; the compact layout starts the payload at 0x28. Trust
+    a sane extended length field first, then fall back to compact.
+    """
+    if len(data) >= AUDIO_HEADER_EXTENDED:
+        data_len = struct.unpack_from("<I", data, 0x30)[0]
+        if 0 < data_len < 2000 and len(data) >= AUDIO_HEADER_EXTENDED + data_len:
+            return AUDIO_HEADER_EXTENDED
+    return AUDIO_HEADER_COMPACT
+
+
+def _video_payload(data: bytes, header_size: int) -> bytes | None:
+    """Slice the video elementary stream for a detected header layout.
+
+    The extended layout carries a little-endian payload length just before the
+    stream (at ``header_size - 4``); honour it when present and sane. The
+    compact layout has no trailing length field, so the payload runs to the end
+    of the (already frame-bounded) chunk.
+    """
+    if header_size in (IFRAME_HEADER_EXTENDED, PFRAME_HEADER_EXTENDED):
+        data_len = struct.unpack_from("<I", data, header_size - 4)[0]
+        if 0 < data_len <= MAX_FRAME_DATA_BYTES:
+            if len(data) < header_size + data_len:
+                return None
+            return data[header_size : header_size + data_len]
+    return data[header_size:]
+
 
 @dataclass(frozen=True)
 class StreamFrame:
@@ -188,34 +264,42 @@ def parse_stream_frame(data: bytes):
         return None
     frame_type = data[3]
     if frame_type == STREAM_TYPE_IFRAME:
-        if len(data) < 0x3C:
+        if len(data) < IFRAME_HEADER_COMPACT:
             return None
+        header_size = _video_header_size(data, STREAM_TYPE_IFRAME)
         sequence = struct.unpack_from("<I", data, 0x10)[0]
-        timestamp_ms = struct.unpack_from("<I", data, 0x30)[0]
-        data_len = struct.unpack_from("<I", data, 0x38)[0]
-        if data_len > 0 and len(data) < 0x3C + data_len:
+        timestamp_ms = struct.unpack_from("<I", data, header_size - 0x0C)[0]
+        payload = _video_payload(data, header_size)
+        if payload is None:
             return None
-        payload = data[0x3C : 0x3C + data_len] if data_len > 0 else data[0x3C:]
-        return StreamFrame(frame_type, 0x3C, payload, timestamp_ms, sequence)
+        return StreamFrame(frame_type, header_size, payload, timestamp_ms, sequence)
     if frame_type == STREAM_TYPE_PFRAME:
-        if len(data) < 0x34:
+        if len(data) < PFRAME_HEADER_COMPACT:
             return None
+        header_size = _video_header_size(data, STREAM_TYPE_PFRAME)
         sequence = struct.unpack_from("<I", data, 0x08)[0]
-        timestamp_ms = struct.unpack_from("<I", data, 0x28)[0]
-        data_len = struct.unpack_from("<I", data, 0x30)[0]
-        if data_len > 0 and len(data) < 0x34 + data_len:
+        timestamp_ms = struct.unpack_from("<I", data, header_size - 0x0C)[0]
+        payload = _video_payload(data, header_size)
+        if payload is None:
             return None
-        payload = data[0x34 : 0x34 + data_len] if data_len > 0 else data[0x34:]
-        return StreamFrame(frame_type, 0x34, payload, timestamp_ms, sequence)
+        return StreamFrame(frame_type, header_size, payload, timestamp_ms, sequence)
     if frame_type == STREAM_TYPE_AUDIO:
-        if len(data) < 0x34:
+        if len(data) < AUDIO_HEADER_COMPACT:
             return None
-        timestamp_ms = struct.unpack_from("<I", data, 0x28)[0]
-        data_len = struct.unpack_from("<I", data, 0x30)[0]
-        if data_len > 0 and len(data) < 0x34 + data_len:
-            return None
-        payload = data[0x34 : 0x34 + data_len] if data_len > 0 else data[0x34:]
-        return StreamFrame(frame_type, 0x34, payload, timestamp_ms)
+        header_size = _audio_header_size(data)
+        timestamp_ms = struct.unpack_from("<I", data, header_size - 0x0C)[0]
+        if header_size == AUDIO_HEADER_EXTENDED:
+            data_len = struct.unpack_from("<I", data, 0x30)[0]
+            if data_len > 0 and len(data) < AUDIO_HEADER_EXTENDED + data_len:
+                return None
+            payload = (
+                data[header_size : header_size + data_len]
+                if data_len > 0
+                else data[header_size:]
+            )
+        else:
+            payload = data[header_size:]
+        return StreamFrame(frame_type, header_size, payload, timestamp_ms)
     if frame_type == STREAM_TYPE_INFO:
         if len(data) < 8:
             return None

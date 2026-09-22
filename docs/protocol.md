@@ -187,8 +187,8 @@ ordering, source-idle recovery, wake retries) see [streaming.md](streaming.md).
   - `0x12ff` — stop live
   - `0x888e` — heartbeat
 - Modern `START_LIVE` uses parameter `8`, the camera host key, a formatted
-  licence ID, a stream id, and the app-profile stream flag (`0` CloudEdge /
-  `1` ANRAN, CloudPlus, ieGeek, Arenti and BoifunCam; see
+  licence ID, a stream id, and the app-profile stream flag (`0` CloudEdge and
+  Arenti / `1` ANRAN, CloudPlus, ieGeek and BoifunCam; see
   [Discovery](#discovery-and-http-api)). Legacy PPCS authenticates with the
   first 16 host-key bytes and omits the licence component, matching the native
   packet exactly.
@@ -211,6 +211,17 @@ ordering, source-idle recovery, wake retries) see [streaming.md](streaming.md).
   payload` records. Sequence is at offset `0`, type at `16`, timestamp at
   `20`, and payload length at `28`; types `0xf0`, `0xf1`, and `0xfa` map to
   video I-frame, video P-frame, and audio respectively.
+- VVP video/audio frames use one of **two header layouts**, differing by a
+  0x0C-byte plaintext sub-header. The elementary stream (video) or G.711 payload
+  (audio) always begins right after the header:
+  - *Compact*: I-frame payload at `0x30`, P-frame/audio at `0x28`. No trailing
+    length field — the frame is bounded by the next `00 00 01` frame marker.
+  - *Extended*: I-frame payload at `0x3C` (little-endian length at `0x38`),
+    P-frame at `0x34` (length at `0x30`), audio at `0x34` (length at `0x30`).
+  The parser detects the layout **per frame** by probing for the Annex-B start
+  code (`00 00 01` / `00 00 00 01`) at the compact offset, falling back to the
+  extended offset. This matters because using the wrong (larger) offset chops
+  the SPS/PPS parameter sets off every keyframe, so no player can decode.
 - Video may be H.264 or HEVC. **Detection comes from Annex-B payloads**, not
   from profile names alone.
 - Some streams mix encrypted and plain frames. Parse validation must choose
