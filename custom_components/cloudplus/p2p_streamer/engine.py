@@ -45,6 +45,7 @@ from .protocol import (
     build_vvp_packet,
 )
 from .codec import (
+    AUDIO_HEADER_EXTENDED,
     FrameSequenceTracker,
     StreamFrame,
     decrypt_stream_frame,
@@ -296,21 +297,20 @@ class P2PStreamer(LiveSessionMixin):
             return self._parse_video_chunk(chunk)
 
         if frame_type == STREAM_TYPE_AUDIO:
-            if self._audio_decrypt is True:
-                decrypted = decrypt_stream_frame(bytearray(chunk))
-                return parse_stream_frame(bytes(decrypted))
-            if self._audio_decrypt is False:
-                return parse_stream_frame(chunk)
-
             raw = parse_stream_frame(chunk)
-            if raw is not None and raw.header_size == 0x34:
+            if raw is not None and raw.header_size == AUDIO_HEADER_EXTENDED:
                 self._audio_decrypt = False
                 return raw
             decrypted = bytes(decrypt_stream_frame(bytearray(chunk)))
             parsed = parse_stream_frame(decrypted)
-            if parsed is not None:
+            if parsed is not None and parsed.header_size == AUDIO_HEADER_EXTENDED:
                 self._audio_decrypt = True
-            return parsed
+                return parsed
+            if self._video_decrypt is not None:
+                self._audio_decrypt = self._video_decrypt
+            elif self._audio_decrypt is None:
+                self._audio_decrypt = True
+            return parsed if self._audio_decrypt else raw
 
         return parse_stream_frame(chunk)
 

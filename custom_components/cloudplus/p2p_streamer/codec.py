@@ -24,13 +24,8 @@ MAX_FRAME_DATA_BYTES = 8 * 1024 * 1024
 VIDEO_ENCRYPTED_HEADER_BYTES = 0x80
 _TLS = threading.local()
 
-# Meari-family cameras use one of two VVP media-frame header layouts. Both start
-# with the encrypted region at the *compact* offset; older/other firmware then
-# carries an extra 0x0C-byte plaintext sub-header (ending in a little-endian
-# payload length) before the elementary stream, giving the *extended* layout.
-# The elementary stream itself always begins with an Annex-B start code
-# (00 00 01 / 00 00 00 01), so we detect which layout a decrypted frame uses by
-# probing for that start code per frame (protocol.md: "choose per frame").
+# Both layouts encrypt from the compact offset; extended frames carry another
+# 12 bytes of metadata before the media payload.
 IFRAME_HEADER_COMPACT = 0x30
 IFRAME_HEADER_EXTENDED = 0x3C
 PFRAME_HEADER_COMPACT = 0x28
@@ -44,60 +39,39 @@ _VIDEO_HEADER_SIZES = {
 
 
 def _starts_annexb(data: bytes, offset: int) -> bool:
-    """Return true when an Annex-B NAL start code sits at ``offset``."""
-    if offset < 0 or offset + 4 > len(data):
-        return False
-    if data[offset] != 0 or data[offset + 1] != 0:
-        return False
-    if data[offset + 2] == 1:
-        return True
-    return data[offset + 2] == 0 and data[offset + 3] == 1
+    return data[offset : offset + 3] == b"\x00\x00\x01" or data[
+        offset : offset + 4
+    ] == b"\x00\x00\x00\x01"
 
 
 def _video_header_size(data: bytes, frame_type: int) -> int | None:
-    """Pick the video frame header size for the layout this frame uses.
-
-    The compact layout places the elementary stream (and the encrypted region)
-    right after the fixed header; the extended layout inserts an extra 0x0C
-    plaintext sub-header first. Prefer the compact offset when its decrypted
-    bytes already start a NAL, else fall back to the extended offset.
-    """
+    """Choose compact when an Annex-B payload begins at its offset."""
     compact, extended = _VIDEO_HEADER_SIZES[frame_type]
     if _starts_annexb(data, compact):
         return compact
-    if _starts_annexb(data, extended):
-        return extended
-    return None
+    return extended if len(data) >= extended else None
 
 
 def _audio_header_size(data: bytes) -> int:
-    """Pick the audio frame header size, mirroring the video-layout probe.
-
-    The extended layout carries a little-endian payload length at 0x30 and the
-    G.711 payload at 0x34; the compact layout starts the payload at 0x28. Trust
-    a sane extended length field first, then fall back to compact.
-    """
+    """Use the extended audio layout only when its length fits exactly."""
     if len(data) >= AUDIO_HEADER_EXTENDED:
-        data_len = struct.unpack_from("<I", data, 0x30)[0]
+        data_len = struct.unpack_from("<I", data, AUDIO_HEADER_EXTENDED - 4)[0]
         if 0 < data_len < 2000 and len(data) == AUDIO_HEADER_EXTENDED + data_len:
             return AUDIO_HEADER_EXTENDED
     return AUDIO_HEADER_COMPACT
 
 
 def _video_payload(data: bytes, header_size: int) -> bytes | None:
-    """Slice the video elementary stream for a detected header layout.
-
-    The extended layout carries a little-endian payload length just before the
-    stream (at ``header_size - 4``); honour it when present and sane. The
-    compact layout has no trailing length field, so the payload runs to the end
-    of the (already frame-bounded) chunk.
-    """
+    """Validate and slice an extended payload, or use the whole compact one."""
     if header_size in (IFRAME_HEADER_EXTENDED, PFRAME_HEADER_EXTENDED):
         data_len = struct.unpack_from("<I", data, header_size - 4)[0]
-        if 0 < data_len <= MAX_FRAME_DATA_BYTES:
-            if len(data) < header_size + data_len:
-                return None
-            return data[header_size : header_size + data_len]
+        if data_len > MAX_FRAME_DATA_BYTES or len(data) < header_size + data_len:
+            return None
+        return (
+            data[header_size : header_size + data_len]
+            if data_len
+            else data[header_size:]
+        )
     return data[header_size:]
 
 
@@ -210,19 +184,21 @@ def _find_stream_start(data: bytes, start: int = 0) -> int:
 
 
 def _peek_video_total_len(frame: bytes, frame_type: int) -> int | None:
-    enc_offset = 0x30 if frame_type == STREAM_TYPE_IFRAME else 0x28
-    enc_len = _available_encrypted_len(
-        len(frame), enc_offset, VIDEO_ENCRYPTED_HEADER_BYTES
-    )
+    enc_offset, header_size = _VIDEO_HEADER_SIZES[frame_type]
+    enc_len = _available_encrypted_len(len(frame), enc_offset, 16)
     if enc_len < 16:
         return None
+    if _starts_annexb(frame, enc_offset):
+        return None
+    if _starts_annexb(frame, header_size):
+        data_len = struct.unpack_from("<I", frame, header_size - 4)[0]
+        return header_size + data_len if 0 < data_len <= MAX_FRAME_DATA_BYTES else None
     header = _des3_ecb_decrypt_block(bytes(frame[enc_offset : enc_offset + enc_len]))
-    _, extended = _VIDEO_HEADER_SIZES[frame_type]
     if _starts_annexb(header, 0):
         return None
     data_len = struct.unpack_from("<I", header, 8)[0]
     if 0 < data_len <= MAX_FRAME_DATA_BYTES:
-        return extended + data_len
+        return header_size + data_len
     return None
 
 
@@ -265,47 +241,27 @@ def parse_stream_frame(data: bytes):
     if data[0] != 0 or data[1] != 0 or data[2] != 1:
         return None
     frame_type = data[3]
-    if frame_type == STREAM_TYPE_IFRAME:
-        if len(data) < IFRAME_HEADER_COMPACT:
+    if frame_type in _VIDEO_HEADER_SIZES:
+        compact, _ = _VIDEO_HEADER_SIZES[frame_type]
+        if len(data) < compact:
             return None
-        header_size = _video_header_size(data, STREAM_TYPE_IFRAME)
+        header_size = _video_header_size(data, frame_type)
         if header_size is None:
             return None
-        sequence = struct.unpack_from("<I", data, 0x10)[0]
-        timestamp_ms = struct.unpack_from("<I", data, header_size - 0x0C)[0]
         payload = _video_payload(data, header_size)
         if payload is None:
             return None
-        return StreamFrame(frame_type, header_size, payload, timestamp_ms, sequence)
-    if frame_type == STREAM_TYPE_PFRAME:
-        if len(data) < PFRAME_HEADER_COMPACT:
-            return None
-        header_size = _video_header_size(data, STREAM_TYPE_PFRAME)
-        if header_size is None:
-            return None
-        sequence = struct.unpack_from("<I", data, 0x08)[0]
+        sequence = struct.unpack_from(
+            "<I", data, 0x10 if frame_type == STREAM_TYPE_IFRAME else 0x08
+        )[0]
         timestamp_ms = struct.unpack_from("<I", data, header_size - 0x0C)[0]
-        payload = _video_payload(data, header_size)
-        if payload is None:
-            return None
         return StreamFrame(frame_type, header_size, payload, timestamp_ms, sequence)
     if frame_type == STREAM_TYPE_AUDIO:
         if len(data) < AUDIO_HEADER_COMPACT:
             return None
         header_size = _audio_header_size(data)
         timestamp_ms = struct.unpack_from("<I", data, header_size - 0x0C)[0]
-        if header_size == AUDIO_HEADER_EXTENDED:
-            data_len = struct.unpack_from("<I", data, 0x30)[0]
-            if data_len > 0 and len(data) < AUDIO_HEADER_EXTENDED + data_len:
-                return None
-            payload = (
-                data[header_size : header_size + data_len]
-                if data_len > 0
-                else data[header_size:]
-            )
-        else:
-            payload = data[header_size:]
-        return StreamFrame(frame_type, header_size, payload, timestamp_ms)
+        return StreamFrame(frame_type, header_size, data[header_size:], timestamp_ms)
     if frame_type == STREAM_TYPE_INFO:
         if len(data) < 8:
             return None
@@ -332,9 +288,12 @@ def split_stream_frames(data: bytes) -> list[bytes]:
             break
 
         total_len = _peek_frame_total_len(data, start)
-        if total_len is not None and start + total_len <= len(data):
-            chunks.append(data[start : start + total_len])
-            pos = start + total_len
+        end = start + total_len if total_len is not None else -1
+        if total_len is not None and end <= len(data) and (
+            end == len(data) or _find_stream_start(data, end) == end
+        ):
+            chunks.append(data[start:end])
+            pos = end
             continue
 
         next_start = _find_stream_start(data, start + 4)

@@ -212,16 +212,16 @@ ordering, source-idle recovery, wake retries) see [streaming.md](streaming.md).
   `20`, and payload length at `28`; types `0xf0`, `0xf1`, and `0xfa` map to
   video I-frame, video P-frame, and audio respectively.
 - VVP video/audio frames use one of **two header layouts**, differing by a
-  0x0C-byte plaintext sub-header. The elementary stream (video) or G.711 payload
-  (audio) always begins right after the header:
-  - *Compact*: I-frame payload at `0x30`, P-frame/audio at `0x28`. No trailing
-    length field — the frame is bounded by the next `00 00 01` frame marker.
-  - *Extended*: I-frame payload at `0x3C` (little-endian length at `0x38`),
-    P-frame at `0x34` (length at `0x30`), audio at `0x34` (length at `0x30`).
-  The parser detects the layout **per frame** by probing for the Annex-B start
-  code (`00 00 01` / `00 00 00 01`) at the compact offset, falling back to the
-  extended offset. This matters because using the wrong (larger) offset chops
-  the SPS/PPS parameter sets off every keyframe, so no player can decode.
+  12-byte sub-header:
+  - *Compact*: I-frame payload at `0x30`, P-frame/audio at `0x28`. No declared
+    payload length; the frame ends at the next `00 00 01` frame marker.
+  - *Extended*: I-frame payload at `0x3c`, P-frame/audio at `0x34`, with a
+    little-endian payload length four bytes before the payload.
+  The parser checks for an Annex-B start code at the compact video offset on
+  each frame. Extended video uses its declared length, including when an
+  encrypted payload has no visible Annex-B prefix. Compact audio follows the
+  detected video encryption mode, or the encrypted default until video is
+  known.
 - Video may be H.264 or HEVC. **Detection comes from Annex-B payloads**, not
   from profile names alone.
 - Some streams mix encrypted and plain frames. Parse validation must choose
