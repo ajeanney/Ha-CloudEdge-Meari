@@ -424,10 +424,38 @@ class MeariApiClient:
         msg = f"GET\n\n\n{timeout}\n{path}\n{action}"
         return _hmac_sha1_b64(msg, self.access_key), timeout
 
+    def _device_config_auth(self, deviceid: str) -> dict:
+        """Per-device auth params the OpenAPI device endpoints now require.
+
+        Meari added a per-device ``token`` (the device's ``deviceSignature``)
+        alongside ``t`` and ``clientid`` on /openapi/device/config and
+        /openapi/device/awaken. Both values are already present in the
+        device-list payload. Without them the server answers
+        ``{'errid': 401, 'errstr': 'Authorization Failed'}``.
+        """
+        if not deviceid:
+            return {}
+        for dev in self.devices.values():
+            if format_sn(dev.get("snNum", "")) != deviceid:
+                continue
+            sig = dev.get("deviceSignature")
+            if not sig:
+                return {}
+            out = {"token": sig, "clientid": str(self.user_id or "")}
+            t = dev.get("t")
+            if t not in (None, ""):
+                out["t"] = str(t)
+            return out
+        return {}
+
     def _openapi_get(self, path: str, params: dict) -> dict:
         self._apply_platform_defaults()
         if not self.openapi_server or not self.access_id or not self.access_key:
             raise RuntimeError("OpenAPI credentials unavailable")
+        if path in ("/openapi/device/config", "/openapi/device/awaken") and (
+            "token" not in params
+        ):
+            params.update(self._device_config_auth(params.get("deviceid", "")))
         action = params.get("action", "get")
         sig, timeout = self._openapi_signature(path, action)
         params["accessid"] = self.access_id
@@ -944,6 +972,7 @@ class MeariApiClient:
                     "deviceid": dev_uuid,
                     "sid": sid,
                 }
+                params.update(self._device_config_auth(dev_uuid))
                 url = self.openapi_server + "/openapi/device/awaken"
                 r = self._http_get(url, params=params)
                 if r.status_code == 200:
