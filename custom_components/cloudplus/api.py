@@ -99,6 +99,7 @@ APP_PROFILE_CONFIG: dict[str, AppProfileConfig] = {
         "https://apis.arenti.net",
         "39",
         encrypted_login=True,
+        vvp_stream_flag=0,
     ),
 }
 
