@@ -38,22 +38,31 @@ class IotNumberSpec:
     step: float = 1
     icon: str | None = None
     unit: str | None = None
+    # When set, only create the entity if the capability flags advertise the
+    # feature, i.e. never fall back to "the code is present in the IoT blob".
+    # Required for codes the vendor reuses for unrelated settings, where
+    # writing the wrong meaning would corrupt an unrelated device setting.
+    require_feature: bool = False
 
 
 IOT_NUMBERS: tuple[IotNumberSpec, ...] = (
+    # Range spans every value the app's pickers use, since the scale is
+    # model-dependent: R.array.motion_level_value = [6, 4, 2] and
+    # R.array.iot_sensitivity_value = [0, 1, 2]. Cameras do report 0.
     IotNumberSpec(
         "motion_det",
         MOTION_DET_SENSITIVITY,
         "Motion Sensitivity",
-        1,
-        5,
+        0,
+        6,
         icon="mdi:motion-sensor",
     ),
+    # R.array.decibel_level_value = [2, 1, 0]; some models use a 0-100 scale.
     IotNumberSpec(
         "noise_det",
         SOUND_DET_SENSITIVITY,
         "Sound Sensitivity",
-        1,
+        0,
         100,
         icon="mdi:ear-hearing",
     ),
@@ -73,6 +82,10 @@ IOT_NUMBERS: tuple[IotNumberSpec, ...] = (
         10,
         icon="mdi:motion-sensor",
     ),
+    # Code 242 is reused: the Arenti app's device-config parser maps it to
+    # setTemperatureMax (milli-degC), and a temp/humidity camera reports e.g.
+    # 242 = 30000. Gate on the PIR capability so this never binds to a
+    # temperature alarm limit, which writing would overwrite.
     IotNumberSpec(
         "pir",
         PIR_TRIGGER_INTERVAL,
@@ -81,6 +94,7 @@ IOT_NUMBERS: tuple[IotNumberSpec, ...] = (
         60,
         icon="mdi:timer-outline",
         unit=UnitOfTime.SECONDS,
+        require_feature=True,
     ),
     IotNumberSpec(
         "light_brightness",
@@ -134,7 +148,8 @@ async def async_setup_entry(
     entities.extend(
         CloudEdgeMeariIotNumber(coord, entry, spec)
         for spec in IOT_NUMBERS
-        if coord.supports_iot(spec.feature) or coord.has_iot_code(spec.code)
+        if coord.supports_iot(spec.feature)
+        or (not spec.require_feature and coord.has_iot_code(spec.code))
     )
     async_add_entities(entities)
 
