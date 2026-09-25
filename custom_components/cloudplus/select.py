@@ -51,21 +51,33 @@ IOT_SELECTS: tuple[IotSelectSpec, ...] = (
         None,
         DAY_NIGHT_MODE,
         "Day/Night Mode",
-        {0: "Day", 1: "Night", 2: "Auto"},
+        # R.array.day_night_mode paired with day_night_mode_value = [0, 1, 2].
+        {0: "Automatic", 1: "Day", 2: "Night"},
         "mdi:theme-light-dark",
     ),
     IotSelectSpec(
         "alarm_frequency",
         ALARM_FREQUENCY,
-        "Alarm Frequency",
-        {0: "Low", 1: "Medium", 2: "High"},
+        "Alarm Interval",
+        # R.array.alarm_frequency_name paired with alarm_frequency_value.
+        # This is an alarm re-trigger interval, not a sensitivity level.
+        {
+            0: "Off",
+            1: "1 Minute",
+            2: "2 Minutes",
+            3: "3 Minutes",
+            4: "5 Minutes",
+            5: "10 Minutes",
+            6: "30 Seconds",
+        },
         "mdi:bell-ring",
     ),
     IotSelectSpec(
         "siren_alarm",
         SOUND_LIGHT_TYPE,
         "Sound/Light Alarm Type",
-        {0: "Sound", 1: "Light", 2: "Both"},
+        # R.array.alarm_type_name.
+        {0: "Audio Warning", 1: "White Light Warning", 2: "Audio and Strobe"},
         "mdi:alarm-light",
     ),
     IotSelectSpec(
@@ -79,7 +91,14 @@ IOT_SELECTS: tuple[IotSelectSpec, ...] = (
         "full_color",
         FULL_COLOR_MODE,
         "Full Color Mode",
-        {0: "Black/White", 1: "Full Color"},
+        # R.array.full_color_mode paired with day_night_mode_value = [0, 1, 2].
+        # Hardware variants offer different value sets (full_color_mode3 uses
+        # [1, 5], full_color_mode2 uses [0, 1, 2, 3]); this is the base set.
+        {
+            0: "Intelligent Vision",
+            1: "Full Color Night Vision",
+            2: "Black and White Night Vision",
+        },
         "mdi:invert-colors",
     ),
 )
