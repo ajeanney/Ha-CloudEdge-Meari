@@ -39,10 +39,8 @@ PLAYBACK_RECORD_VIDEO_TYPE = 104  # (Int) duplicate ID for playback filtering
 SD_RECORD_DURATION = 105  # (Int) duration in seconds
 PLAYBACK_RECORD_VIDEO_DURATION = 105  # (Int) duplicate ID for record length
 MOTION_DET_ENABLE = 106  # (Int) 0: Off, 1: On
-# The app offers a 3-item Low/Medium/High picker whose values are per-model
-# and can be inverted: R.array.motion_level_value = [6, 4, 2], while
-# R.array.iot_sensitivity_value = [0, 1, 2]. Treated here as a plain numeric.
-MOTION_DET_SENSITIVITY = 107  # (Int) model-dependent sensitivity
+# IoT Low/Medium/High = 0/1/2. The SDK converts to 6/4/2 for P2P only.
+MOTION_DET_SENSITIVITY = 107  # (Int) 0: Low, 1: Medium, 2: High
 HUMAN_DET_ENABLE = 108  # (Int) 0: Off, 1: On (AI Human Detection)
 SOUND_DET_ENABLE = 109  # (Int) 0: Off, 1: On
 # App picker is Low/Medium/High over R.array.decibel_level_value = [2, 1, 0]

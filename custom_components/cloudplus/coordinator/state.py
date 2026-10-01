@@ -19,7 +19,7 @@ from ..p2p_streamer import (
     quality_profile_labels,
     supports_adaptive_stream,
 )
-from .iot import iot_value, normalize_iot_values, supports_feature
+from .iot import capability_value, iot_value, normalize_iot_values, supports_feature
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -113,6 +113,10 @@ class CoordinatorStateMixin:
 
     def supports_iot(self, feature: str | None) -> bool:
         return supports_feature(self._capabilities, self._device, feature)
+
+    def iot_capability(self, name: str | None) -> int | None:
+        """Return an advertised capability, or None when it is unknown."""
+        return capability_value(self._capabilities, name)
 
     def has_iot_code(self, code: int | str) -> bool:
         return self.get_iot_value(code) is not None

@@ -46,15 +46,13 @@ class IotNumberSpec:
 
 
 IOT_NUMBERS: tuple[IotNumberSpec, ...] = (
-    # Range spans every value the app's pickers use, since the scale is
-    # model-dependent: R.array.motion_level_value = [6, 4, 2] and
-    # R.array.iot_sensitivity_value = [0, 1, 2]. Cameras do report 0.
+    # IoT uses 0/1/2; the SDK translates these to 6/4/2 only for P2P commands.
     IotNumberSpec(
         "motion_det",
         MOTION_DET_SENSITIVITY,
         "Motion Sensitivity",
         0,
-        6,
+        2,
         icon="mdi:motion-sensor",
     ),
     # R.array.decibel_level_value = [2, 1, 0]; some models use a 0-100 scale.
@@ -174,6 +172,9 @@ class CloudEdgeMeariIotNumber(CloudEdgeMeariIotNumericEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the camera IoT value."""
+        spec = self._spec
+        if not spec.min_value <= value <= spec.max_value or (value - spec.min_value) % spec.step:
+            raise ValueError(f"Invalid {spec.name} value: {value}")
         await self.hass.async_add_executor_job(
             self._coordinator.set_iot_value,
             self._spec.code,

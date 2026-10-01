@@ -68,11 +68,8 @@ class IotSensorSpec:
     # the sentinel is 255.0 in native units for both.
     sentinel: float | None = None
     precision: int | None = None
-    # When set, only create the entity if the capability flags advertise the
-    # feature. Devices report a stale value for unequipped sensors (e.g. a
-    # camera with caps hmd=0 still returns code 1009), so the generic
-    # "code is present" fallback would publish garbage.
-    require_feature: bool = False
+    # Explicit zero hides stale telemetry; absent flags retain legacy support.
+    capability: str | None = None
 
 
 IOT_SENSORS: tuple[IotSensorSpec, ...] = (
@@ -85,7 +82,7 @@ IOT_SENSORS: tuple[IotSensorSpec, ...] = (
         divisor=1000.0,
         sentinel=255.0,  # raw 255000
         precision=1,
-        require_feature=True,
+        capability="tmpr",
     ),
     IotSensorSpec(
         "humidity_sensor",
@@ -96,7 +93,7 @@ IOT_SENSORS: tuple[IotSensorSpec, ...] = (
         # No divisor: code 1009 is already whole percent (see IotSensorSpec).
         sentinel=255.0,  # raw 255
         precision=0,
-        require_feature=True,
+        capability="hmd",
     ),
     IotSensorSpec(
         "wifi_signal",
@@ -107,6 +104,13 @@ IOT_SENSORS: tuple[IotSensorSpec, ...] = (
         icon="mdi:wifi",
     ),
 )
+
+
+def _supports_sensor(coordinator: CloudEdgeMeariCoordinator, spec: IotSensorSpec) -> bool:
+    advertised = coordinator.iot_capability(spec.capability)
+    if advertised is not None:
+        return advertised > 0
+    return coordinator.supports_iot(spec.feature) or coordinator.has_iot_code(spec.code)
 
 
 async def async_setup_entry(
@@ -123,8 +127,7 @@ async def async_setup_entry(
     entities.extend(
         CloudEdgeMeariIotSensor(coord, entry, spec)
         for spec in IOT_SENSORS
-        if coord.supports_iot(spec.feature)
-        or (not spec.require_feature and coord.has_iot_code(spec.code))
+        if _supports_sensor(coord, spec)
     )
     async_add_entities(entities)
 

@@ -27,6 +27,21 @@ STREAM_HOST_OPTIONS: dict[str, str] = {
 }
 _OPTION_TO_KEY = {v: k for k, v in STREAM_HOST_OPTIONS.items()}
 
+_NIGHT_VISION_LABELS = {
+    0: "Intelligent Vision",
+    1: "Full Color Night Vision",
+    2: "Black and White Night Vision",
+    3: "Shimmer Full Color",
+    5: "White Light Off",
+    6: "Intelligent Full Color",
+}
+_NIGHT_VISION_PROFILES = {
+    2: (0, 1, 2),
+    3: (0, 1, 2, 3),
+    4: (0, 2),
+    5: (1, 5),
+}
+
 
 @dataclass(frozen=True)
 class IotSelectSpec:
@@ -91,17 +106,53 @@ IOT_SELECTS: tuple[IotSelectSpec, ...] = (
         "full_color",
         FULL_COLOR_MODE,
         "Full Color Mode",
-        # R.array.full_color_mode paired with day_night_mode_value = [0, 1, 2].
-        # Hardware variants offer different value sets (full_color_mode3 uses
-        # [1, 5], full_color_mode2 uses [0, 1, 2, 3]); this is the base set.
-        {
-            0: "Intelligent Vision",
-            1: "Full Color Night Vision",
-            2: "Black and White Night Vision",
-        },
+        {value: _NIGHT_VISION_LABELS[value] for value in _NIGHT_VISION_PROFILES[2]},
         "mdi:invert-colors",
     ),
 )
+
+
+def _night_vision_options(
+    coordinator: CloudEdgeMeariCoordinator, spec: IotSelectSpec
+) -> dict[int, str]:
+    mode = coordinator.iot_capability("dnm")
+    flags = coordinator.iot_capability("dnm2") or 0
+    # Match the SDK's ordered overrides when multiple profile bits are set.
+    for bit, profile in ((1, 1), (2, 2), (4, 3), (16, 5)):
+        if flags & bit:
+            mode = profile
+
+    if mode is None:
+        options = dict(spec.options)
+    elif spec.code == DAY_NIGHT_MODE:
+        options = dict(spec.options) if mode == 1 else {}
+    else:
+        values = _NIGHT_VISION_PROFILES.get(mode, ())
+        if mode == 5 and flags & 32:
+            values = (1, 6, 5)
+        options = {value: _NIGHT_VISION_LABELS[value] for value in values}
+
+    if options:
+        if flags & 8:
+            options[4] = "Scheduled"
+        if flags & 32 and mode != 5:
+            options[6] = _NIGHT_VISION_LABELS[6]
+    return options
+
+
+def _select_options(
+    coordinator: CloudEdgeMeariCoordinator, spec: IotSelectSpec
+) -> dict[int, str]:
+    if spec.code == ALARM_FREQUENCY:
+        mask = coordinator.iot_capability("afq")
+        version = coordinator.iot_capability("ver") or 0
+        if version >= 22 and mask is not None:
+            return {value: label for value, label in spec.options.items() if mask & (1 << value)}
+        # Older or unadvertised capabilities keep the original three choices.
+        return {value: label for value, label in spec.options.items() if value <= 2}
+    if spec.code in {DAY_NIGHT_MODE, FULL_COLOR_MODE}:
+        return _night_vision_options(coordinator, spec)
+    return dict(spec.options)
 
 
 async def async_setup_entry(
@@ -114,12 +165,11 @@ async def async_setup_entry(
     entities: list[SelectEntity] = [CloudEdgeMeariStreamHostSelect(coord, entry)]
     if coord.quality_profiles:
         entities.append(CloudEdgeMeariStreamQualitySelect(coord, entry))
-    entities.extend(
-        CloudEdgeMeariIotSelect(coord, entry, spec)
-        for spec in IOT_SELECTS
-        if (spec.feature and coord.supports_iot(spec.feature))
-        or coord.has_iot_code(spec.code)
-    )
+    for spec in IOT_SELECTS:
+        if not (coord.supports_iot(spec.feature) or coord.has_iot_code(spec.code)):
+            continue
+        if options := _select_options(coord, spec):
+            entities.append(CloudEdgeMeariIotSelect(coord, entry, spec, options))
     async_add_entities(entities)
 
 
@@ -131,17 +181,19 @@ class CloudEdgeMeariIotSelect(CloudEdgeMeariIotEntity, SelectEntity):
         coordinator: CloudEdgeMeariCoordinator,
         entry: ConfigEntry,
         spec: IotSelectSpec,
+        options: dict[int, str],
     ) -> None:
         super().__init__(coordinator, entry, spec)
-        self._label_to_value = {label: value for value, label in spec.options.items()}
-        self._attr_options = list(spec.options.values())
+        self._options = options
+        self._label_to_value = {label: value for value, label in options.items()}
+        self._attr_options = list(options.values())
         self._attr_unique_id = f"{coordinator.device_uuid}_iot_select_{spec.code}"
 
     @property
     def current_option(self) -> str | None:
         value = self._iot_value
         try:
-            return self._spec.options.get(int(value))
+            return self._options.get(int(value))
         except (TypeError, ValueError):
             return None
 
@@ -149,7 +201,7 @@ class CloudEdgeMeariIotSelect(CloudEdgeMeariIotEntity, SelectEntity):
         """Update the camera IoT value."""
         value = self._label_to_value.get(option)
         if value is None:
-            return
+            raise ValueError(f"Unsupported {self._spec.name} option: {option}")
         await self.hass.async_add_executor_job(
             self._coordinator.set_iot_value,
             self._spec.code,

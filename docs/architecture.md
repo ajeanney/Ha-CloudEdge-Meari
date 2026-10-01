@@ -49,14 +49,32 @@ derived from the camera's IoT model:
 | `camera.py` | Live + idle MPEG-TS stream. | — |
 | `binary_sensor.py` | Motion / Awake / Charging. | — |
 | `button.py` | Wake Camera. | — |
-| `sensor.py` | Battery + Charge Status. | Temperature, Humidity. |
+| `sensor.py` | Battery + Charge Status. | Temperature, Humidity, WiFi Signal. |
 | `number.py` | Motion Timeout. | Sensitivities, intervals, brightness, volume… |
 | `select.py` | Stream Host Mode, Stream Quality. | Day/Night, SD record, anti-flicker… |
 | `switch.py` | Wake on Motion. | LED, PIR, ONVIF, HomeKit, sirens… |
 
 IoT entities are gated on `coordinator.supports_iot(feature)` or
-`coordinator.has_iot_code(code)`, so cameras only show the toggles they
-actually implement.
+`coordinator.has_iot_code(code)`. `coordinator.iot_capability(name)` preserves
+the distinction between an explicit zero and an unknown flag (missing,
+invalid, or the SDK's `-1` default).
+
+- Temperature (`1008`) is converted from milli-degrees Celsius; humidity
+  (`1009`) is already whole percent. Native `255` readings are unavailable.
+  Explicit `tmpr=0` / `hmd=0` flags suppress stale sensor channels; unknown
+  flags retain the IoT-code fallback for legacy cameras.
+- Motion sensitivity (`107`) writes IoT values `0/1/2`. The SDK's P2P
+  `6/4/2` encoding is a separate transport representation.
+- Alarm interval (`178`) options follow the `afq` bitmask for capability
+  version `22+`. Older or unadvertised capabilities retain the original
+  three intervals; known modern `afq=0` exposes no interval entity.
+- Day/night (`113`) and full-color (`209`) options follow `dnm` and the
+  ordered `dnm2` profile overrides. Only the active command is exposed when
+  a profile is advertised. Schedule and intelligent-color choices require
+  their modifier bits; missing profiles retain the base option maps.
+
+Each select uses the same per-camera option map for display and writes;
+unsupported choices and out-of-range number writes are rejected locally.
 
 ## Coordinator
 
@@ -68,7 +86,7 @@ actually implement.
 | `__init__.py` | Lifecycle, IoT cache, wake retry loop, video pipeline glue. |
 | `state.py` | Awake / battery / charge state machine, event fan-out. |
 | `motion.py` | Translates raw MQTT alarms into HA binary-sensor pulses. |
-| `iot.py` | IoT model read/write through the Meari HTTP API. |
+| `iot.py` | Capability parsing and feature checks, IoT value normalization/lookups. |
 | `mpegts.py` + `muxer.py` | ffmpeg-based MPEG-TS muxer (video copy, audio encode). |
 | `audio_encoder.py` | G.711 µ-law → AAC. |
 | `stream_server.py` + `stream_bootstrap.py` | TCP fan-out of MPEG-TS, PAT/PMT seed, idle-stream loop. |

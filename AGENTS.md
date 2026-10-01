@@ -14,7 +14,8 @@ means the doc is broken — fix it now, not later.
 
 A Home Assistant custom integration for Meari-family battery cameras
 (CloudEdge / CloudPlus / Meari / ieGeek / Arenti). Pure asyncio, no build
-step, runtime is HA. Offline motion snapshot regression tests live in `tests/`. Validate with [debug.py](debug.py).
+step, runtime is HA. Offline IoT entity, motion snapshot, and media-layout
+regression tests live in `tests/`. Validate with [debug.py](debug.py).
 
 ## Repo map
 
@@ -51,8 +52,8 @@ pip install pylint   # linter (dev only)
 
 ## Iteration loop
 
-Run `python -m unittest discover -s tests -v` for offline motion snapshot
-regression coverage. Validate hardware behaviour changes with the harness:
+Run `python -m unittest discover -s tests -v` for offline regression
+coverage. Validate hardware behaviour changes with the harness:
 
 ```bash
 python debug.py list                                              # auth + discovery

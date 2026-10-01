@@ -15,6 +15,14 @@ def as_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def capability_value(caps: Mapping[str, Any], name: str | None) -> int | None:
+    """Read a capability, preserving absent/invalid vendor flags as unknown."""
+    if name is None:
+        return None
+    value = as_int(caps.get(name), -1)
+    return value if value >= 0 else None
+
+
 def parse_capabilities(device: Mapping[str, Any]) -> dict[str, Any]:
     """Return the device capability.caps dictionary."""
     raw = device.get("capability") or {}
