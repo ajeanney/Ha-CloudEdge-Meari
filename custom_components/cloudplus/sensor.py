@@ -52,6 +52,24 @@ class IotSensorSpec:
     device_class: SensorDeviceClass
     unit: str
     icon: str | None = None
+    # Raw-to-native divisor. The vendor scale is not symmetric between the two
+    # sensors; per the Arenti 5.1.2 device-config parser:
+    #
+    #   "1008" -> optDouble() / 1000.0 -> setTemperature(float)  => milli-degC
+    #   "1009" -> optInt()             -> setHumidity(int)       => whole %RH
+    #
+    # The threshold codes are milli-units on both axes (the alarm screen
+    # divides 242/243 and 244/245 by 1000), so they are not a guide to the
+    # current-value scale.
+    divisor: float = 1.0
+    # Vendor "no reading" sentinel, compared against the native (post-divisor)
+    # value. The app derives haveSensor as NOT (temperature == 255.0 AND
+    # humidity == 255); its temperature compare happens after the /1000, so
+    # the sentinel is 255.0 in native units for both.
+    sentinel: float | None = None
+    precision: int | None = None
+    # Explicit zero hides stale telemetry; absent flags retain legacy support.
+    capability: str | None = None
 
 
 IOT_SENSORS: tuple[IotSensorSpec, ...] = (
@@ -61,6 +79,10 @@ IOT_SENSORS: tuple[IotSensorSpec, ...] = (
         "Temperature",
         SensorDeviceClass.TEMPERATURE,
         UnitOfTemperature.CELSIUS,
+        divisor=1000.0,
+        sentinel=255.0,  # raw 255000
+        precision=1,
+        capability="tmpr",
     ),
     IotSensorSpec(
         "humidity_sensor",
@@ -68,6 +90,10 @@ IOT_SENSORS: tuple[IotSensorSpec, ...] = (
         "Humidity",
         SensorDeviceClass.HUMIDITY,
         PERCENTAGE,
+        # No divisor: code 1009 is already whole percent (see IotSensorSpec).
+        sentinel=255.0,  # raw 255
+        precision=0,
+        capability="hmd",
     ),
     IotSensorSpec(
         "wifi_signal",
@@ -78,6 +104,13 @@ IOT_SENSORS: tuple[IotSensorSpec, ...] = (
         icon="mdi:wifi",
     ),
 )
+
+
+def _supports_sensor(coordinator: CloudEdgeMeariCoordinator, spec: IotSensorSpec) -> bool:
+    advertised = coordinator.iot_capability(spec.capability)
+    if advertised is not None:
+        return advertised > 0
+    return coordinator.supports_iot(spec.feature) or coordinator.has_iot_code(spec.code)
 
 
 async def async_setup_entry(
@@ -94,7 +127,7 @@ async def async_setup_entry(
     entities.extend(
         CloudEdgeMeariIotSensor(coord, entry, spec)
         for spec in IOT_SENSORS
-        if coord.supports_iot(spec.feature) or coord.has_iot_code(spec.code)
+        if _supports_sensor(coord, spec)
     )
     async_add_entities(entities)
 
@@ -113,6 +146,7 @@ class CloudEdgeMeariIotSensor(CloudEdgeMeariIotNumericEntity, SensorEntity):
         super().__init__(coordinator, entry, spec)
         self._attr_device_class = spec.device_class
         self._attr_native_unit_of_measurement = spec.unit
+        self._attr_suggested_display_precision = spec.precision
         self._attr_unique_id = f"{coordinator.device_uuid}_iot_sensor_{spec.code}"
 
 

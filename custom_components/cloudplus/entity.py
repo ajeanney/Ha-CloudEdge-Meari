@@ -82,7 +82,13 @@ class CloudEdgeMeariIotEntity(CloudEdgeMeariEntity):
 
 
 class CloudEdgeMeariIotNumericEntity(CloudEdgeMeariIotEntity):
-    """IoT entity whose value is exposed as a float (sensor / number)."""
+    """IoT entity whose value is exposed as a float (sensor / number).
+
+    Specs may optionally declare ``divisor`` to convert the raw wire value to
+    the native unit (several Meari codes report milli-units) and ``sentinel``
+    for the vendor's "no reading" marker, which is reported as unavailable.
+    Specs without those attributes keep the plain pass-through behaviour.
+    """
 
     @property
     def native_value(self) -> float | None:
@@ -90,9 +96,18 @@ class CloudEdgeMeariIotNumericEntity(CloudEdgeMeariIotEntity):
         if value is None:
             return None
         try:
-            return float(value)
+            number = float(value)
         except (TypeError, ValueError):
             return None
+
+        divisor = getattr(self._spec, "divisor", 1.0) or 1.0
+        if divisor != 1.0:
+            number /= divisor
+
+        sentinel = getattr(self._spec, "sentinel", None)
+        if sentinel is not None and number == sentinel:
+            return None
+        return number
 
     @property
     def available(self) -> bool:
