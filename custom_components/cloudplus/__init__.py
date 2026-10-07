@@ -42,6 +42,7 @@ SUPPRESS_CAMERA_RECREATE = "_suppress_camera_recreate"
 PLATFORMS = [
     "camera",
     "binary_sensor",
+    "event",
     "button",
     "sensor",
     "number",

@@ -48,6 +48,7 @@ derived from the camera's IoT model:
 |------|------|------------|
 | `camera.py` | Live + idle MPEG-TS stream. | — |
 | `binary_sensor.py` | Motion / Awake / Charging. | — |
+| `event.py` | Doorbell press (`ring`), doorbell categories only. | — |
 | `button.py` | Wake Camera. | — |
 | `sensor.py` | Battery + Charge Status. | Temperature, Humidity, WiFi Signal. |
 | `number.py` | Motion Timeout. | Sensitivities, intervals, brightness, volume… |

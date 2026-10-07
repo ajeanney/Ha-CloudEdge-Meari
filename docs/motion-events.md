@@ -97,6 +97,11 @@ registers when the device-list category is a doorbell (`doorbell`,
 - is forwarded from the listener thread to HA's event loop with
   `call_soon_threadsafe`.
 
+The `event` platform (`event.py`) exposes this as a **Doorbell** event
+entity (`device_class: doorbell`) with event type `ring` and an
+`alarm_type` attribute carrying the alarm name. It is created only for
+doorbell-category devices.
+
 ## Fallback: cloud event polling
 
 Because the MQTT session is regularly evicted whenever the account is also

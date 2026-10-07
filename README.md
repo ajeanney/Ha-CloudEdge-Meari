@@ -143,6 +143,7 @@ discovered from the camera's IoT model values.
 | Motion              | `binary_sensor` | PIR / motion / AI alert (person, pet, package, etc.). |
 | Camera Awake        | `binary_sensor` | True while the camera is actively streaming. |
 | Charging            | `binary_sensor` | USB charging state (battery cameras). |
+| Doorbell            | `event`         | Fires `ring` when the doorbell button is pressed (doorbell devices only). |
 | Battery             | `sensor`        | Charge percentage (battery cameras). |
 | Charge Status       | `sensor`        | Discharging / Charging / Full text status. |
 | Wake Camera         | `button`        | Manually wake the camera. |
