@@ -66,12 +66,21 @@ Alarm-type fields the parser looks for, in order:
 - `alertType`
 - `evt`
 
-See [`const.py`](../custom_components/cloudplus/const.py) `ALARM_TYPE_NAMES`
-and `MOTION_ALARM_TYPES` for the active mapping. The motion binary sensor
-fires for any alarm in `MOTION_ALARM_TYPES = {1, 2, 11, 20}` (PIR, Motion,
-Human body, Person). Other alarm types (Visitor, Noise, Package, etc.) are
-classified by `motion_event.py` but currently routed only to logs / future
-event sensors.
+See [`const.py`](../custom_components/cloudplus/const.py) `ALARM_TYPE_NAMES`,
+`MOTION_ALARM_TYPES` and `DOORBELL_ALARM_TYPES` for the active mapping. The
+motion binary sensor fires for any alarm in `MOTION_ALARM_TYPES = {1, 2, 11,
+20}` (PIR, Motion, Human body, Person). `DOORBELL_ALARM_TYPES = {3}`
+(Visitor) is a separate set, flagged as `is_doorbell` by `motion_event.py`;
+the two sets never overlap. `9` ("Call") is not treated as a doorbell press
+until a real payload confirms it. When a payload holds several candidate
+entries, the parser prefers the first motion or doorbell entry. Other alarm
+types (Noise, Package, etc.) are classified but only logged.
+
+Every parsed alarm is logged at debug level on
+`custom_components.cloudplus.coordinator.motion` as
+`Meari alarm event source=<mqtt|poll> type=<raw> name=<name>`. The line
+carries the alarm type only — no device ids, serials or image URLs — and is
+the way to confirm which number a given device sends.
 
 ## Fallback: cloud event polling
 

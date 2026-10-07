@@ -335,7 +335,7 @@ class MotionEventListener:
             if not self._remember_event(device_id, event_id):
                 continue
             if dispatch:
-                self._handle_payload(json.dumps(raw_event).encode())
+                self._handle_payload(json.dumps(raw_event).encode(), source="poll")
         return True
 
     def _poll_device_events(self, dispatch: bool) -> bool:
@@ -376,7 +376,7 @@ class MotionEventListener:
                     continue
                 self._seen_alarm_keys.add(key)
                 if dispatch:
-                    self._handle_payload(json.dumps(raw_event).encode())
+                    self._handle_payload(json.dumps(raw_event).encode(), source="poll")
 
         summary_ok = self._poll_new_event_summary(devices, dispatch)
 
@@ -396,13 +396,22 @@ class MotionEventListener:
                 out.append((registered_sn, callback))
         return out
 
-    def _handle_payload(self, payload: bytes) -> None:
+    def _handle_payload(self, payload: bytes, source: str = "mqtt") -> None:
         try:
             event = parse_motion_event(payload)
         except (ValueError, KeyError, TypeError) as exc:
             _LOGGER.debug("MQTT motion payload parse failed: %s", exc)
             return
-        if not event or not event["is_motion"]:
+        if not event:
+            return
+        # Alarm type and name only: never ids, serials or image URLs.
+        _LOGGER.debug(
+            "Meari alarm event source=%s type=%s name=%s",
+            source,
+            event["evt_raw"],
+            event["evt_name"],
+        )
+        if not event["is_motion"]:
             return
 
         device_id = event["device_id"]

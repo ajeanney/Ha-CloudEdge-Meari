@@ -74,6 +74,11 @@ PTZ_DIRECTIONS: dict[str, tuple[int, int]] = {
 # Motion-related alarm types (from motion_detector.py)
 MOTION_ALARM_TYPES = {1, 2, 11, 20}
 
+# Doorbell-press alarm types. Kept separate from MOTION_ALARM_TYPES so a ring
+# never pulses the motion sensor. 9 ("Call") is unconfirmed for doorbells and
+# stays out until a real payload shows it.
+DOORBELL_ALARM_TYPES = {3}
+
 ALARM_TYPE_NAMES = {
     1: "PIR",
     2: "Motion",
