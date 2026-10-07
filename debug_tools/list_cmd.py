@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
+from typing import Any
+
 from .auth import _login_api_with_fallback
 from .bootstrap import _bootstrap_integration_modules
 
@@ -10,6 +13,7 @@ async def cmd_list(args) -> int:
     mods = _bootstrap_integration_modules()
     api_cls = mods["api"].MeariApiClient
     quality_options = mods["p2p_streamer"].quality_options
+    iot = importlib.import_module("custom_components.cloudplus.coordinator.iot")
 
     api = _login_api_with_fallback(api_cls, args)
 
@@ -39,11 +43,20 @@ async def cmd_list(args) -> int:
             f"name={dev.get('deviceName')} category={dev.get('_category')}"
         )
         print(f"    quality profiles: {profiles_str}")
+        print(f"    onvif: {_onvif_status(iot, dev)}")
         # Show firmware version if available
         fw = dev.get("deviceVersionID", "")
         if fw:
             print(f"    firmware: {fw}")
     return 0
+
+
+def _onvif_status(iot: Any, dev: dict[str, Any]) -> str:
+    """Describe the device-list ``ovf`` capability that gates the ONVIF switch."""
+    flag = iot.capability_value(iot.parse_capabilities(dev), "ovf")
+    if flag is None:
+        return "unknown (ovf not advertised)"
+    return f"{'supported' if flag > 0 else 'not supported'} (ovf={flag})"
 
 
 def _parse_quality_arg(

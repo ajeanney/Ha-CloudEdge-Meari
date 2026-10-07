@@ -308,7 +308,7 @@ integration takes, so you can repro problems outside Home Assistant:
 
 ```bash
 # Copy .env.example or create your own .env with EMAIL/PASSWORD/COUNTRY_CODE
-python debug.py list
+python debug.py list                      # cameras, quality profiles, ONVIF capability
 python debug.py stream --device-id <id> --duration 60 --quality QHD
 python debug.py events --device-id <id>   # print motion / doorbell alarms live
 python debug.py --debug stream --device-id <id> --duration 30  # verbose logs
