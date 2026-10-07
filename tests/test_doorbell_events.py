@@ -204,5 +204,30 @@ class CoordinatorAndEntityTests(unittest.TestCase):
         entity.async_write_ha_state.assert_called_once()
 
 
+class EventsCommandTests(unittest.TestCase):
+    """``debug.py events`` mirrors HA routing without any cloud traffic."""
+
+    def test_prints_rings_for_doorbells_only(self):
+        events_cmd = importlib.import_module("debug_tools.events_cmd")
+        listener = MOTION.MotionEventListener(Mock())
+        devices = [
+            {"deviceID": 42, "snNum": SERIAL, "deviceName": "Front door",
+             "_category": "doorbell"},
+            {"deviceID": 43, "snNum": "other", "deviceName": "Garden",
+             "_category": "snap"},
+        ]
+        with patch("builtins.print") as printed:
+            for dev in devices:
+                events_cmd._register_camera(
+                    listener, dev, CONST.DOORBELL_CATEGORIES)
+            listener._handle_payload(payload())
+            listener._handle_payload(payload(deviceID="43", msgID="m2"))
+        lines = [call.args[0] for call in printed.call_args_list]
+        rings = [line for line in lines if "RING" in line]
+        self.assertEqual(len(rings), 1)
+        self.assertIn("Front door: Visitor", rings[0])
+        self.assertFalse(any(SERIAL in line for line in lines))
+
+
 if __name__ == "__main__":
     unittest.main()

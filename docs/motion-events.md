@@ -164,6 +164,12 @@ motion delivery permanently stopped until Home Assistant restarts.
 
 ## Practical guidance
 
+- `python debug.py events [--device-id <id>] [--duration <s>]` runs the same
+  listener outside HA and prints each delivered motion / ring plus the
+  `Meari alarm event …` type line for every parsed alarm. It opens the
+  account's MQTT session, so it evicts HA's and the phone's while running,
+  and it seeds pre-existing events silently like the integration does.
+
 - If MQTT connect logs `Bad user name or password`, low-latency MQTT push is
   unavailable for that session but cloud polling remains active.
 - If MQTT events stop after running for a long time, check that no other

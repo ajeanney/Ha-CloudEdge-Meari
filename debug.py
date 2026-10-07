@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """CloudPlus camera local debug harness entry point."""
 
@@ -12,6 +13,7 @@ from typing import IO
 
 from debug_tools.auth import _prepare_auth_args
 from debug_tools.common import AUTH_PROFILES
+from debug_tools.events_cmd import cmd_events
 from debug_tools.list_cmd import cmd_list
 from debug_tools.stream_cmd import cmd_stream
 
@@ -49,6 +51,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list", help="Login and list cameras")
+
+    events = commands.add_parser(
+        "events", help="Watch motion / doorbell alarms via MQTT + event polling"
+    )
+    events.add_argument("--device-id", type=int, help="Only watch this deviceID")
+    events.add_argument("--sn", help="Only watch this serial number")
+    events.add_argument(
+        "--duration",
+        type=int,
+        default=0,
+        help="Seconds to listen; 0 runs until Ctrl+C",
+    )
 
     stream = commands.add_parser("stream", help="Open a camera stream in ffplay")
     stream.add_argument("--device-id", type=int, help="Camera deviceID")
@@ -118,6 +132,8 @@ def build_parser() -> argparse.ArgumentParser:
 async def async_main(args: argparse.Namespace) -> int:
     if args.command == "list":
         return await cmd_list(args)
+    if args.command == "events":
+        return await cmd_events(args)
     if args.command == "stream":
         return await cmd_stream(args)
     raise RuntimeError(f"Unknown command: {args.command}")

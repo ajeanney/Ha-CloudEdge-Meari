@@ -130,8 +130,9 @@ inside `p2p_streamer/`, because they're also used by the API client:
 
 `debug_tools/` — used by `debug.py` to drive the same coordinator code from
 the command line. `auth.py` loads `.env`, `list_cmd.py` prints cameras,
-`stream_cmd.py` runs a full session and pipes the muxer output into ffplay
-plus optional analysis (TS / PCM / visual reports under `visual.py`,
+`events_cmd.py` runs the real `MotionEventListener` and prints motion /
+doorbell alarms, `stream_cmd.py` runs a full session and pipes the muxer
+output into ffplay plus optional analysis (TS / PCM / visual reports under `visual.py`,
 `ts_analysis.py`, `correlation.py`).
 
 This is the canonical way to repro a bug — anything you see in HA should also

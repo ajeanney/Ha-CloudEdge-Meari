@@ -58,6 +58,7 @@ coverage. Validate hardware behaviour changes with the harness:
 ```bash
 python debug.py list                                              # auth + discovery
 python debug.py stream --device-id <id> --duration 60 --quality SD
+python debug.py events --device-id <id>                           # live motion / doorbell alarms
 python debug.py --debug stream --device-id <id> --duration 30    # verbose
 ```
 
