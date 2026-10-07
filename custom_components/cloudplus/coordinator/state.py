@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from ..api import MeariApiClient
 from ..const import (
+    DOORBELL_CATEGORIES,
     IOT_CODE_BATTERY_PERCENT,
     IOT_CODE_CHARGE_STATUS,
     IOT_CODE_LAMP,
@@ -78,6 +79,10 @@ class CoordinatorStateMixin:
     @property
     def is_battery_camera(self) -> bool:
         return self._is_snap
+
+    @property
+    def is_doorbell(self) -> bool:
+        return self._device_category in DOORBELL_CATEGORIES
 
     @property
     def camera_awake(self) -> bool:
@@ -257,14 +262,20 @@ class CoordinatorStateMixin:
         self._motion_callbacks.append(cb)
         return lambda: self._remove_callback(self._motion_callbacks, cb)
 
+    def register_doorbell_callback(
+        self, cb: Callable[[str], None]
+    ) -> Callable[[], None]:
+        self._doorbell_callbacks.append(cb)
+        return lambda: self._remove_callback(self._doorbell_callbacks, cb)
+
     def register_update_callback(self, cb: Callable[[], None]) -> Callable[[], None]:
         self._update_callbacks.append(cb)
         return lambda: self._remove_callback(self._update_callbacks, cb)
 
     @staticmethod
     def _remove_callback(
-        callbacks: list[Callable[[], None]],
-        cb: Callable[[], None],
+        callbacks: list[Callable[..., None]],
+        cb: Callable[..., None],
     ) -> None:
         try:
             callbacks.remove(cb)
@@ -282,6 +293,13 @@ class CoordinatorStateMixin:
             return
         for cb in list(self._motion_callbacks):
             self.hass.loop.call_soon_threadsafe(cb)
+
+    def _note_doorbell(self, alarm_name: str) -> None:
+        """Forward a doorbell press from the listener thread to HA's loop."""
+        if self.hass.loop.is_closed():
+            return
+        for cb in list(self._doorbell_callbacks):
+            self.hass.loop.call_soon_threadsafe(cb, alarm_name)
 
     def _set_camera_awake(self, awake: bool) -> None:
         awake = bool(awake)

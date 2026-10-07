@@ -85,7 +85,7 @@ unsupported choices and out-of-range number writes are rejected locally.
 |------|--------------|
 | `__init__.py` | Lifecycle, IoT cache, wake retry loop, video pipeline glue. |
 | `state.py` | Awake / battery / charge state machine, event fan-out. |
-| `motion.py` | Translates raw MQTT alarms into HA binary-sensor pulses. |
+| `motion.py` | Account-scoped MQTT + event-log listener; routes alarms to per-camera motion and doorbell callbacks. |
 | `iot.py` | Capability parsing and feature checks, IoT value normalization/lookups. |
 | `mpegts.py` + `muxer.py` | ffmpeg-based MPEG-TS muxer (video copy, audio encode). |
 | `audio_encoder.py` | G.711 µ-law → AAC. |

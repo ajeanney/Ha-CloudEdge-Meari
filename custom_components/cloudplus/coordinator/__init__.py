@@ -19,6 +19,7 @@ from ..const import (
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_PHONE_CODE,
     DOMAIN,
+    DOORBELL_CATEGORIES,
 )
 from ..p2p_streamer import (
     ADAPTIVE_STREAM_ID,
@@ -106,7 +107,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         self._device_category = str(device.get("_category", "")).lower()
         self._capabilities = parse_capabilities(device)
         battery_capable_doorbell = (
-            self._device_category in {"doorbell", "picturedoorbell", "voicebell"}
+            self._device_category in DOORBELL_CATEGORIES
             and (self._as_int(self._capabilities.get("bat")) or 0) > 0
         )
         self._is_snap = self._device_category == "snap" or battery_capable_doorbell
@@ -191,6 +192,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
 
         self._update_callbacks: list[Callable[[], None]] = []
         self._motion_callbacks: list[Callable[[], None]] = []
+        self._doorbell_callbacks: list[Callable[[str], None]] = []
 
     async def async_start(self) -> None:
         if self._running:
@@ -469,7 +471,10 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
             listener = MotionEventListener(api)
             listeners[key] = listener
         self._motion_listener_unsub = listener.register(
-            self._device_id, self._sn_num, self._note_motion
+            self._device_id,
+            self._sn_num,
+            self._note_motion,
+            self._note_doorbell if self.is_doorbell else None,
         )
         self._motion_listener = listener
         self._motion_listener_key = key

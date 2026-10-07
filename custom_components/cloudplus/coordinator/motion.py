@@ -20,6 +20,10 @@ ALARM_POLL_INTERVAL = 15.0
 ALARM_POLL_ERROR_INTERVAL = 60.0
 # Cap on remembered event ids so the dedup set can't grow without bound.
 _SEEN_ALARM_CAP = 4000
+MotionCallback = Callable[[str, bytes | None], None]
+DoorbellCallback = Callable[[str], None]
+# (device_id, sn_num, on_motion, on_doorbell)
+_Registration = tuple[str, str, MotionCallback, DoorbellCallback | None]
 _IMAGE_URL_KEYS = (
     "imageUrl",
     "imageURL",
@@ -109,14 +113,12 @@ def _event_topics(api: MeariApiClient) -> list[str]:
 
 
 class MotionEventListener:
-    """Account-scoped Meari MQTT listener that dispatches camera motion events."""
+    """Account-scoped Meari listener dispatching camera motion and doorbell events."""
 
     def __init__(self, api: MeariApiClient) -> None:
         self._api = api
         self._client = None
-        self._callbacks: list[
-            tuple[str, str, Callable[[str, bytes | None], None]]
-        ] = []
+        self._callbacks: list[_Registration] = []
         self._lock = threading.Lock()
         self._stop_poll = threading.Event()
         self._poll_thread: threading.Thread | None = None
@@ -133,9 +135,10 @@ class MotionEventListener:
         self,
         device_id: int,
         sn_num: str,
-        on_motion: Callable[[str, bytes | None], None],
+        on_motion: MotionCallback,
+        on_doorbell: DoorbellCallback | None = None,
     ) -> Callable[[], None]:
-        item = (str(device_id), str(sn_num), on_motion)
+        item = (str(device_id), str(sn_num), on_motion, on_doorbell)
         with self._lock:
             self._callbacks.append(item)
 
@@ -348,7 +351,7 @@ class MotionEventListener:
             self._seen_alarm_keys.clear()
 
         with self._lock:
-            devices = {(dev_id, sn) for dev_id, sn, _cb in self._callbacks}
+            devices = {(item[0], item[1]) for item in self._callbacks}
         if not devices:
             return True
 
@@ -385,15 +388,16 @@ class MotionEventListener:
 
     def _matching_callbacks(
         self, device_id: str, license_id: str
-    ) -> list[tuple[str, Callable[[str, bytes | None], None]]]:
+    ) -> list[_Registration]:
         with self._lock:
             callbacks = list(self._callbacks)
-        out: list[tuple[str, Callable[[str, bytes | None], None]]] = []
-        for registered_device_id, registered_sn, callback in callbacks:
+        out: list[_Registration] = []
+        for item in callbacks:
+            registered_device_id, registered_sn = item[0], item[1]
             if device_id and device_id == registered_device_id:
-                out.append((registered_sn, callback))
+                out.append(item)
             elif not device_id and license_id and license_id == registered_sn:
-                out.append((registered_sn, callback))
+                out.append(item)
         return out
 
     def _handle_payload(self, payload: bytes, source: str = "mqtt") -> None:
@@ -411,12 +415,21 @@ class MotionEventListener:
             event["evt_raw"],
             event["evt_name"],
         )
-        if not event["is_motion"]:
+        if not event["is_motion"] and not event["is_doorbell"]:
             return
 
         device_id = event["device_id"]
         license_id = event["license_id"]
         if not device_id and not license_id:
+            return
+
+        if event["is_doorbell"]:
+            # Ring immediately; a snapshot download could delay it by seconds.
+            for _dev, _sn, _on_motion, on_doorbell in self._matching_callbacks(
+                device_id, license_id
+            ):
+                if on_doorbell is not None:
+                    on_doorbell(str(event["evt_name"]))
             return
 
         motion_type = str(event["evt_name"])
@@ -425,7 +438,9 @@ class MotionEventListener:
         encrypted_image = (
             self._api.download_snapshot(image_url) if image_url else None
         )
-        for sn_num, callback in self._matching_callbacks(device_id, license_id):
+        for _dev, sn_num, callback, _on_doorbell in self._matching_callbacks(
+            device_id, license_id
+        ):
             event_image = (
                 _decode_event_snapshot(encrypted_image, sn_num)
                 if encrypted_image

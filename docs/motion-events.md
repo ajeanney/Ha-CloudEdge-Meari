@@ -82,6 +82,21 @@ Every parsed alarm is logged at debug level on
 carries the alarm type only — no device ids, serials or image URLs — and is
 the way to confirm which number a given device sends.
 
+## Doorbell presses
+
+Doorbell alarms (`DOORBELL_ALARM_TYPES`) go through the same listener as
+motion, from both the MQTT push and the event-log poller, so they share the
+`(deviceID, msgID)` de-dup and the startup seed pass. They are routed only
+to a camera's optional `on_doorbell` callback, which the coordinator
+registers when the device-list category is a doorbell (`doorbell`,
+`pictureDoorBell`, `voiceBell`). A doorbell event:
+
+- never pulses the motion binary sensor or triggers wake-on-motion;
+- fires immediately, without waiting for a snapshot download and without
+  replacing the cached camera image;
+- is forwarded from the listener thread to HA's event loop with
+  `call_soon_threadsafe`.
+
 ## Fallback: cloud event polling
 
 Because the MQTT session is regularly evicted whenever the account is also
