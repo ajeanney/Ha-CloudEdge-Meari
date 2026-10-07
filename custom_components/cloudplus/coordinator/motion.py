@@ -124,6 +124,8 @@ class MotionEventListener:
         self._poll_thread: threading.Thread | None = None
         self._seen_alarm_keys: set[tuple[str, str]] = set()
         self._poll_day: str = ""
+        # Devices whose event log answered in the latest poll pass.
+        self._event_log_devices: set[str] = set()
         self._mqtt_connect_warned = False
 
     @property
@@ -338,7 +340,7 @@ class MotionEventListener:
             if not self._remember_event(device_id, event_id):
                 continue
             if dispatch:
-                self._handle_payload(json.dumps(raw_event).encode(), source="poll")
+                self._handle_payload(json.dumps(raw_event).encode(), source="summary")
         return True
 
     def _poll_device_events(self, dispatch: bool) -> bool:
@@ -356,6 +358,7 @@ class MotionEventListener:
             return True
 
         event_log_ok = False
+        event_log_devices: set[str] = set()
         for device_id, _sn in devices:
             try:
                 events = self._api.get_device_events(device_id, day)
@@ -363,6 +366,7 @@ class MotionEventListener:
                 _LOGGER.debug("Event list poll failed for %s: %s", device_id, exc)
                 continue
             event_log_ok = True
+            event_log_devices.add(str(device_id))
             for raw_event in events:
                 if not isinstance(raw_event, dict):
                     continue
@@ -381,6 +385,7 @@ class MotionEventListener:
                 if dispatch:
                     self._handle_payload(json.dumps(raw_event).encode(), source="poll")
 
+        self._event_log_devices = event_log_devices
         summary_ok = self._poll_new_event_summary(devices, dispatch)
 
         self._trim_seen_events()
@@ -399,6 +404,27 @@ class MotionEventListener:
             elif not device_id and license_id and license_id == registered_sn:
                 out.append(item)
         return out
+
+    def _dispatch_doorbell(self, event: dict[str, Any], source: str) -> None:
+        """Ring each matching doorbell once, whichever source reports it first.
+
+        A press can arrive by MQTT, then again in the event log (same msgID),
+        and again as a summary row (no msgID). A spurious second ring would
+        re-trigger automations, so MQTT ids are recorded for the poller and
+        summary rows only ring when that device's event log was unavailable.
+        """
+        msg_id = str(event.get("msg_id") or "")
+        for dev, _sn, _on_motion, on_doorbell in self._matching_callbacks(
+            event["device_id"], event["license_id"]
+        ):
+            if on_doorbell is None:
+                continue
+            if source == "mqtt" and msg_id and not self._remember_event(dev, msg_id):
+                continue
+            if source == "summary" and dev in self._event_log_devices:
+                continue
+            # Ring immediately; a snapshot download could delay it by seconds.
+            on_doorbell(str(event["evt_name"]))
 
     def _handle_payload(self, payload: bytes, source: str = "mqtt") -> None:
         try:
@@ -424,12 +450,7 @@ class MotionEventListener:
             return
 
         if event["is_doorbell"]:
-            # Ring immediately; a snapshot download could delay it by seconds.
-            for _dev, _sn, _on_motion, on_doorbell in self._matching_callbacks(
-                device_id, license_id
-            ):
-                if on_doorbell is not None:
-                    on_doorbell(str(event["evt_name"]))
+            self._dispatch_doorbell(event, source)
             return
 
         motion_type = str(event["evt_name"])

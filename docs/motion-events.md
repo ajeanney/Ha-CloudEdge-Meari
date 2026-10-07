@@ -78,7 +78,7 @@ types (Noise, Package, etc.) are classified but only logged.
 
 Every parsed alarm is logged at debug level on
 `custom_components.cloudplus.coordinator.motion` as
-`Meari alarm event source=<mqtt|poll> type=<raw> name=<name>`. The line
+`Meari alarm event source=<mqtt|poll|summary> type=<raw> name=<name>`. The line
 carries the alarm type only — no device ids, serials or image URLs — and is
 the way to confirm which number a given device sends.
 
@@ -86,7 +86,15 @@ the way to confirm which number a given device sends.
 
 Doorbell alarms (`DOORBELL_ALARM_TYPES`) go through the same listener as
 motion, from both the MQTT push and the event-log poller, so they share the
-`(deviceID, msgID)` de-dup and the startup seed pass. They are routed only
+`(deviceID, msgID)` de-dup and the startup seed pass. Because a second ring
+would re-trigger automations, doorbells get two extra de-dup rules that
+motion does not:
+
+- an MQTT doorbell's `msgID` (when present) is recorded in the same seen set,
+  so the event-log poll does not ring it again, and MQTT redelivery is
+  ignored;
+- a `new/get` summary row (which has no `msgID`) only rings when that
+  device's `event/list` request failed in the same poll pass. They are routed only
 to a camera's optional `on_doorbell` callback, which the coordinator
 registers when the device-list category is a doorbell (`doorbell`,
 `pictureDoorBell`, `voiceBell`). A doorbell event:
@@ -217,4 +225,7 @@ and coordinator methods, and mock only external services. They require no
 HA server, network calls, camera photos or account credentials. Synthetic
 protocol bytes exercise decoding and rejection, routing, startup seeding,
 event de-duplication, unavailable images and an in-flight still conversion.
+`tests/test_doorbell_events.py` covers doorbell parsing, routing, category
+gating, the event entity and cross-source (MQTT / event log / summary)
+de-duplication.
 Live hardware and phone rendering still require an end-to-end test.

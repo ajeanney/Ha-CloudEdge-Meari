@@ -21,6 +21,7 @@ _DEVICE_KEYS = (
     "devID",
     "devId",
 )
+_MSG_ID_KEYS = ("msgID", "msgId")
 _LICENSE_KEYS = (
     "licenseID",
     "licenseId",
@@ -97,6 +98,9 @@ def _normalize(
     evt_int = _as_int(evt_raw)
     device_id = _pick_first(data, _DEVICE_KEYS)
     license_id = _pick_first(data, _LICENSE_KEYS)
+    msg_id = _pick_first(data, _MSG_ID_KEYS)
+    if msg_id is None:
+        msg_id = _find_first(raw, _MSG_ID_KEYS)
     if device_id is None:
         device_id = _find_first(raw, _DEVICE_KEYS)
     if license_id is None:
@@ -113,6 +117,7 @@ def _normalize(
         "is_doorbell": evt_int in DOORBELL_ALARM_TYPES,
         "device_id": device_id_str,
         "license_id": license_id_str,
+        "msg_id": str(msg_id).strip() if msg_id is not None else "",
         "event": str(raw.get("event", "")).strip(),
         "raw": raw,
     }
