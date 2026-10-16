@@ -89,7 +89,7 @@ unsupported choices and out-of-range number writes are rejected locally.
 | `iot.py` | Capability parsing and feature checks, IoT value normalization/lookups. |
 | `mpegts.py` + `muxer.py` | ffmpeg-based MPEG-TS muxer (video copy, audio encode). |
 | `audio_encoder.py` | G.711 µ-law → AAC. |
-| `stream_server.py` + `stream_bootstrap.py` | TCP fan-out of MPEG-TS, PAT/PMT seed, idle-stream loop. |
+| `stream_server.py` + `stream_bootstrap.py` | MPEG-TS fan-out over HTTP GET or raw TCP on one port, PAT/PMT seed, idle-stream loop. |
 
 ## P2P streamer
 

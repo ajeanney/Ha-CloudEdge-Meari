@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import CloudEdgeMeariCoordinator
+from .coordinator.stream_server import HTTP_STREAM_PATH
 from .entity import CloudEdgeMeariEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,12 +50,17 @@ class CloudEdgeMeariCamera(CloudEdgeMeariEntity, Camera):
         return self._coordinator.camera_awake
 
     async def stream_source(self) -> str | None:
-        """Return MPEG-TS stream URL for HA stream / Frigate."""
+        """Return the MPEG-TS stream URL for HA stream and go2rtc.
+
+        HTTP, not ``tcp://``: go2rtc reports no ``url`` for a raw TCP
+        producer, and HA's go2rtc client then fails every WebRTC offer while
+        that producer runs. The same port still serves raw TCP (Frigate).
+        """
         port = self._coordinator.stream_port
         if not port:
             return None
         host = self._coordinator.stream_host
-        return f"tcp://{host}:{port}"
+        return f"http://{host}:{port}{HTTP_STREAM_PATH}"
 
     @property
     def motion_detection_enabled(self) -> bool:
