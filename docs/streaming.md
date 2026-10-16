@@ -191,6 +191,10 @@ stale client joins, and source-idle recovery, but not while video is current.
 - The local TCP listener is health-checked whenever HA requests a stream
   source. If its accept thread stopped unexpectedly, it is recreated and HA
   receives the new port instead of repeatedly opening a dead endpoint.
+  Entity updates only read the current port (`current_stream_port`) to
+  decide whether HA should re-pick its WebRTC provider; they never run the
+  health check, which takes a lock and may rebind on the event loop. The
+  provider refresh task is tracked and cancelled when the entity is removed.
 - New clients need **PAT/PMT plus a current keyframe seed** before live
   packets.
 - Idle streams reuse the latest keyframe/still with the same advertised
