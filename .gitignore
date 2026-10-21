@@ -7,6 +7,7 @@ reverse_engineering/
 !/.*/
 *.md
 !README.md
+!README.fr.md
 !AGENTS.md
 !CLAUDE.md
 !docs/
