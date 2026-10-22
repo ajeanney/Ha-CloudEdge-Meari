@@ -70,6 +70,7 @@ python debug.py --debug stream … 2>&1 | grep -E \
 | `skipped gaps` | KCP-level recovery skipped over a missing range to resume at a clean IVA/VVP boundary. A handful is fine; a flood means persistent loss. |
 | `source-idle` | The reactive `START_LIVE` retry fired because video stopped flowing. Repeated retries mean the camera is silent at the source. |
 | `Unexpected coordinator session loop failure` | A per-camera worker hit an unforeseen error. Its final recovery boundary clears stale awake/motion state and starts a fresh authenticated session; entities should not remain frozen. |
+| `MQTT credentials rejected; renewing the cloud session` (debug) | The broker refused the MQTT login (CONNACK *Bad user name or password* / *Not authorized*); the poll thread logs in again for a fresh `mqttSignature`. Followed by `Motion event cloud session reauthenticated` on success. |
 | `Motion event cloud session reauthenticated` | Both motion polling endpoints failed and the listener renewed its cloud credentials before continuing. |
 | `Local stream listener stopped` | The HA-facing TCP accept loop exited unexpectedly. The next stream-source request recreates it on a healthy port. |
 

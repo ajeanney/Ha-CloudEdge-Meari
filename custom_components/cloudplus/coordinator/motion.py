@@ -18,6 +18,12 @@ from ..motion_event import parse_motion_event
 _LOGGER = logging.getLogger(__name__)
 ALARM_POLL_INTERVAL = 15.0
 ALARM_POLL_ERROR_INTERVAL = 60.0
+MQTT_KEEPALIVE_S = 60
+# A fresh platform login re-issues mqttSignature; don't log in more often than
+# this when the broker keeps rejecting the credentials.
+MQTT_CREDENTIAL_REFRESH_INTERVAL = 600.0
+# CONNACK "Bad user name or password" / "Not authorized" (MQTT 3.1.1 and 5).
+_MQTT_BAD_CREDENTIAL_CODES = frozenset({4, 5, 134, 135})
 # Cap on remembered event ids so the dedup set can't grow without bound.
 _SEEN_ALARM_CAP = 4000
 _IMAGE_URL_KEYS = (
@@ -92,6 +98,14 @@ def _mqtt_code_ok(code: object) -> bool:
         return False
 
 
+def _mqtt_bad_credentials(code: object) -> bool:
+    value = getattr(code, "value", code)
+    try:
+        return int(value) in _MQTT_BAD_CREDENTIAL_CODES
+    except (TypeError, ValueError):
+        return False
+
+
 def _event_topics(api: MeariApiClient) -> list[str]:
     user_id = str(api.user_id or "").strip()
     if not user_id:
@@ -123,6 +137,8 @@ class MotionEventListener:
         self._seen_alarm_keys: set[tuple[str, str]] = set()
         self._poll_day: str = ""
         self._mqtt_connect_warned = False
+        self._mqtt_credentials_stale = threading.Event()
+        self._last_credential_refresh = 0.0
 
     @property
     def has_callbacks(self) -> bool:
@@ -171,6 +187,10 @@ class MotionEventListener:
                     ", ".join(topics),
                 )
             else:
+                if _mqtt_bad_credentials(rc):
+                    # Retrying with the same mqttSignature can't succeed; let
+                    # the poll thread fetch a fresh one with a new login.
+                    self._mqtt_credentials_stale.set()
                 msg = "MQTT motion listener connect failed: rc=%s; using poll fallback"
                 if self._mqtt_connect_warned:
                     _LOGGER.debug(msg, rc)
@@ -213,7 +233,7 @@ class MotionEventListener:
         self._client = client
         try:
             client.connect_async(
-                self._api.mqtt_host, self._api.mqtt_port, keepalive=300
+                self._api.mqtt_host, self._api.mqtt_port, keepalive=MQTT_KEEPALIVE_S
             )
             client.loop_start()
         except (OSError, ValueError) as exc:
@@ -257,6 +277,7 @@ class MotionEventListener:
         # to the same account keeps evicting our MQTT session.
         seeded = False
         while not self._stop_poll.is_set():
+            self._refresh_stale_mqtt_credentials()
             try:
                 if not self._poll_device_events(dispatch=seeded):
                     raise RuntimeError("all motion event endpoints failed")
@@ -270,6 +291,21 @@ class MotionEventListener:
                     else ALARM_POLL_ERROR_INTERVAL
                 )
             self._stop_poll.wait(wait_s)
+
+    def _refresh_stale_mqtt_credentials(self) -> bool:
+        """Log in again after the broker rejected the MQTT credentials."""
+        if not self._mqtt_credentials_stale.is_set():
+            return False
+        now = time.monotonic()
+        if (
+            self._last_credential_refresh
+            and now - self._last_credential_refresh < MQTT_CREDENTIAL_REFRESH_INTERVAL
+        ):
+            return False
+        self._mqtt_credentials_stale.clear()
+        self._last_credential_refresh = now
+        _LOGGER.debug("MQTT credentials rejected; renewing the cloud session")
+        return self._reauthenticate_api()
 
     def _reauthenticate_api(self) -> bool:
         try:

@@ -18,7 +18,10 @@ payload shapes to expect.
   - **Username** = platform access id
   - **Password** = `mqttSignature`
   - **Clean session** = `true`
-  - **Keepalive** = `300`
+  - **Keepalive** = `300` in the apps; this integration uses `60`
+    (`MQTT_KEEPALIVE_S`). With `300` the broker closed the connection exactly
+    300 s after every connect (Paho reports *Unspecified error*), right when
+    Paho sends its first `PINGREQ`; with `60` the connection stays up.
 - The app keeps **one Meari MQTT session per account** and dispatches events
   to cameras internally. Multiple MQTT sessions with the same user-id /
   client-id can make the broker disconnect older sessions — this is the
@@ -127,8 +130,13 @@ motion delivery permanently stopped until Home Assistant restarts.
 
 ## Practical guidance
 
-- If MQTT connect logs `Bad user name or password`, low-latency MQTT push is
-  unavailable for that session but cloud polling remains active.
+- If MQTT connect logs `Bad user name or password`, the `mqttSignature` the
+  listener holds is no longer accepted (for example after a newer platform
+  login on the account). Cloud polling stays active, and the poll thread
+  performs a fresh login and hands the new signature to the MQTT client for
+  its next reconnect. It renews at most once per
+  `MQTT_CREDENTIAL_REFRESH_INTERVAL` (10 min), so an account the broker keeps
+  rejecting doesn't turn into a login loop.
 - If MQTT events stop after running for a long time, check that no other
   client is logging in with the same account. The broker silently drops the
   older session.
