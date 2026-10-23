@@ -131,6 +131,14 @@ class CoordinatorStateMixin:
         return self._stream_server.port
 
     @property
+    def current_stream_port(self) -> int:
+        """The listener's current port, without health-checking it.
+
+        Safe to read on every entity update; ``stream_port`` may rebind.
+        """
+        return self._stream_server.port
+
+    @property
     def stream_host_mode(self) -> str:
         return self._stream_host_mode
 
