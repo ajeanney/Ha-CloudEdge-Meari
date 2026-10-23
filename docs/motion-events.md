@@ -131,12 +131,15 @@ motion delivery permanently stopped until Home Assistant restarts.
 ## Practical guidance
 
 - If MQTT connect logs `Bad user name or password`, the `mqttSignature` the
-  listener holds is no longer accepted (for example after a newer platform
-  login on the account). Cloud polling stays active, and the poll thread
-  performs a fresh login and hands the new signature to the MQTT client for
-  its next reconnect. It renews at most once per
-  `MQTT_CREDENTIAL_REFRESH_INTERVAL` (10 min), so an account the broker keeps
-  rejecting doesn't turn into a login loop.
+  listener holds is no longer accepted: any newer platform login on the
+  account (e.g. another camera entry's coordinator) re-issues it. The apps
+  treat CONNACK 4 as "logged in on another device" (`loginOnOtherDevices()`)
+  and log out. Cloud polling stays active, and the poll thread performs a
+  fresh login and hands the new signature to the MQTT client for its next
+  reconnect. It renews at most once per `MQTT_CREDENTIAL_REFRESH_INTERVAL`
+  (10 min), so an account the broker keeps rejecting doesn't turn into a
+  login loop. That renewal login can in turn log out a phone app sharing
+  the account.
 - If MQTT events stop after running for a long time, check that no other
   client is logging in with the same account. The broker silently drops the
   older session.
