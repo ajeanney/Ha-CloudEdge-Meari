@@ -1,4 +1,10 @@
-"""Small TCP MPEG-TS stream server."""
+"""Small MPEG-TS stream server: raw TCP or a plain HTTP GET on one port.
+
+Raw TCP clients (``tcp://host:port``, e.g. Frigate) send nothing and just
+read. HTTP clients (``http://host:port/stream.ts``) get a 200 header first.
+HA uses the HTTP form: go2rtc only reports a ``url`` for HTTP producers, and
+HA's go2rtc client fails every WebRTC offer while a producer has none.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +12,7 @@ import collections
 import logging
 import socket
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable, Deque
 
@@ -15,6 +22,65 @@ _LOGGER = logging.getLogger(__name__)
 
 CLIENT_QUEUE_CHUNKS = 4096
 CLIENT_SEND_TIMEOUT_S = 10.0
+# How long a new client gets to start an HTTP request before it is treated
+# as a raw TCP reader. Raw readers never send, so they pay this once.
+HTTP_SNIFF_S = 0.3
+HTTP_REQUEST_MAX_BYTES = 8192
+HTTP_REQUEST_TIMEOUT_S = 2.0
+HTTP_STREAM_PATH = "/stream.ts"
+HTTP_RESPONSE_HEADER = (
+    b"HTTP/1.1 200 OK\r\n"
+    b"Content-Type: video/mp2t\r\n"
+    b"Cache-Control: no-cache\r\n"
+    b"Connection: close\r\n"
+    b"\r\n"
+)
+HTTP_NOT_FOUND = (
+    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+)
+
+
+def _http_handshake(client: socket.socket) -> bool:
+    """Answer an HTTP GET for the stream; return False to drop the client.
+
+    No request within ``HTTP_SNIFF_S`` means a raw TCP reader: nothing is
+    consumed or sent. A request for another path, or HEAD, is answered and
+    dropped.
+    """
+    # Socket timeouts, not select(): select() rejects fds >= 1024, which a
+    # busy HA process reaches.
+    try:
+        client.settimeout(HTTP_SNIFF_S)
+        try:
+            client.recv(1, socket.MSG_PEEK)
+        except TimeoutError:
+            return True
+        request = b""
+        deadline = time.monotonic() + HTTP_REQUEST_TIMEOUT_S
+        while b"\r\n\r\n" not in request:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or len(request) >= HTTP_REQUEST_MAX_BYTES:
+                return False
+            client.settimeout(remaining)
+            chunk = client.recv(HTTP_REQUEST_MAX_BYTES - len(request))
+            if not chunk:
+                return False
+            request += chunk
+            if not request.startswith(b"GET "[: len(request)]) and not (
+                request.startswith(b"HEAD"[: len(request)])
+            ):
+                return True  # stray bytes from a raw reader; ignore them
+        method, _, rest = request.partition(b" ")
+        path = rest.split(b" ", 1)[0].split(b"?", 1)[0]
+        if path not in (b"/", HTTP_STREAM_PATH.encode()):
+            client.sendall(HTTP_NOT_FOUND)
+            return False
+        client.sendall(HTTP_RESPONSE_HEADER)
+        return method == b"GET"
+    except OSError:
+        return False
+    finally:
+        client.settimeout(CLIENT_SEND_TIMEOUT_S)
 
 
 @dataclass
@@ -166,36 +232,45 @@ class StreamServer:
             except OSError:
                 client.close()
                 continue
-            queue: Deque[bytes] = collections.deque(maxlen=CLIENT_QUEUE_CHUNKS)
-            event = threading.Event()
-            wait_generation = 0
-            with self._lock:
-                bootstrap = self._bootstrap.snapshot()
-                target_generation = self._bootstrap_generation_unlocked() + 1
-            if self._on_missing_bootstrap is not None:
-                try:
-                    if self._on_missing_bootstrap():
-                        wait_generation = target_generation
-                except (OSError, RuntimeError):
-                    pass
-            with self._lock:
-                if wait_generation:
-                    if self._bootstrap_generation_unlocked() >= wait_generation:
-                        bootstrap = self._bootstrap.snapshot()
-                        wait_generation = 0
-                    else:
-                        bootstrap = b""
-                elif not bootstrap:
-                    bootstrap = self._bootstrap.snapshot()
-                if bootstrap:
-                    queue.append(bootstrap)
-                    event.set()
-                self._clients.append(_Client(client, queue, event, wait_generation))
+            # Sniff for HTTP off the accept thread so a slow client never
+            # holds up the next one.
             threading.Thread(
-                target=self._client_writer,
-                args=(client, queue, event),
-                daemon=True,
+                target=self._serve_client, args=(client,), daemon=True
             ).start()
+
+    def _serve_client(self, client: socket.socket) -> None:
+        if not _http_handshake(client) or not self._running:
+            try:
+                client.close()
+            except OSError:
+                pass
+            return
+        queue: Deque[bytes] = collections.deque(maxlen=CLIENT_QUEUE_CHUNKS)
+        event = threading.Event()
+        wait_generation = 0
+        with self._lock:
+            bootstrap = self._bootstrap.snapshot()
+            target_generation = self._bootstrap_generation_unlocked() + 1
+        if self._on_missing_bootstrap is not None:
+            try:
+                if self._on_missing_bootstrap():
+                    wait_generation = target_generation
+            except (OSError, RuntimeError):
+                pass
+        with self._lock:
+            if wait_generation:
+                if self._bootstrap_generation_unlocked() >= wait_generation:
+                    bootstrap = self._bootstrap.snapshot()
+                    wait_generation = 0
+                else:
+                    bootstrap = b""
+            elif not bootstrap:
+                bootstrap = self._bootstrap.snapshot()
+            if bootstrap:
+                queue.append(bootstrap)
+                event.set()
+            self._clients.append(_Client(client, queue, event, wait_generation))
+        self._client_writer(client, queue, event)
 
     def _bootstrap_generation_unlocked(self) -> int:
         return int(self._bootstrap.state().get("generation", 0) or 0)
