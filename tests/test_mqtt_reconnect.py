@@ -72,6 +72,17 @@ class MqttReconnectTests(unittest.TestCase):
         self.assertEqual(self.api.login.call_count, 1)
         self.assertTrue(self.listener._mqtt_credentials_stale.is_set())
 
+    def test_refresh_resumes_after_interval(self):
+        on_connect = self.client.on_connect
+        with patch.object(MOTION.time, "monotonic", return_value=50.0):
+            on_connect(self.client, None, {}, SimpleNamespace(value=134), None)
+            self.assertTrue(self.listener._refresh_stale_mqtt_credentials())
+            on_connect(self.client, None, {}, SimpleNamespace(value=134), None)
+        later = 50.0 + MOTION.MQTT_CREDENTIAL_REFRESH_INTERVAL
+        with patch.object(MOTION.time, "monotonic", return_value=later):
+            self.assertTrue(self.listener._refresh_stale_mqtt_credentials())
+        self.assertEqual(self.api.login.call_count, 2)
+
     def test_other_failures_do_not_log_in(self):
         self.client.on_connect(self.client, None, {}, SimpleNamespace(value=3), None)
         self.assertFalse(self.listener._refresh_stale_mqtt_credentials())
