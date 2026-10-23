@@ -138,7 +138,7 @@ class MotionEventListener:
         self._poll_day: str = ""
         self._mqtt_connect_warned = False
         self._mqtt_credentials_stale = threading.Event()
-        self._last_credential_refresh = 0.0
+        self._last_credential_refresh = float("-inf")
 
     @property
     def has_callbacks(self) -> bool:
@@ -297,10 +297,7 @@ class MotionEventListener:
         if not self._mqtt_credentials_stale.is_set():
             return False
         now = time.monotonic()
-        if (
-            self._last_credential_refresh
-            and now - self._last_credential_refresh < MQTT_CREDENTIAL_REFRESH_INTERVAL
-        ):
+        if now - self._last_credential_refresh < MQTT_CREDENTIAL_REFRESH_INTERVAL:
             return False
         self._mqtt_credentials_stale.clear()
         self._last_credential_refresh = now
