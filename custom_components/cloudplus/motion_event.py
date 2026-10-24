@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .const import ALARM_TYPE_NAMES, MOTION_ALARM_TYPES
+from .const import ALARM_TYPE_NAMES, MOTION_ALARM_TYPES, SOUND_ALARM_TYPES
 
 _WRAPPER_KEYS = ("params", "data", "msg", "result", "items", "payload")
 _EVENT_KEYS = ("eventType", "alarmType", "imageAlertType", "alertType", "evt")
@@ -110,6 +110,7 @@ def _normalize(
         "evt_int": evt_int,
         "evt_name": evt_name,
         "is_motion": evt_int in MOTION_ALARM_TYPES,
+        "is_sound": evt_int in SOUND_ALARM_TYPES,
         "device_id": device_id_str,
         "license_id": license_id_str,
         "event": str(raw.get("event", "")).strip(),

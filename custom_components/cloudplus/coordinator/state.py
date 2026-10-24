@@ -265,14 +265,18 @@ class CoordinatorStateMixin:
         self._motion_callbacks.append(cb)
         return lambda: self._remove_callback(self._motion_callbacks, cb)
 
+    def register_sound_callback(self, cb: Callable[[str], None]) -> Callable[[], None]:
+        self._sound_callbacks.append(cb)
+        return lambda: self._remove_callback(self._sound_callbacks, cb)
+
     def register_update_callback(self, cb: Callable[[], None]) -> Callable[[], None]:
         self._update_callbacks.append(cb)
         return lambda: self._remove_callback(self._update_callbacks, cb)
 
     @staticmethod
     def _remove_callback(
-        callbacks: list[Callable[[], None]],
-        cb: Callable[[], None],
+        callbacks: list[Callable[..., None]],
+        cb: Callable[..., None],
     ) -> None:
         try:
             callbacks.remove(cb)
@@ -290,6 +294,12 @@ class CoordinatorStateMixin:
             return
         for cb in list(self._motion_callbacks):
             self.hass.loop.call_soon_threadsafe(cb)
+
+    def _note_sound(self, sound_type: str) -> None:
+        if self.hass.loop.is_closed():
+            return
+        for cb in list(self._sound_callbacks):
+            self.hass.loop.call_soon_threadsafe(cb, sound_type)
 
     def _set_camera_awake(self, awake: bool) -> None:
         awake = bool(awake)

@@ -191,6 +191,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
 
         self._update_callbacks: list[Callable[[], None]] = []
         self._motion_callbacks: list[Callable[[], None]] = []
+        self._sound_callbacks: list[Callable[[str], None]] = []
 
     async def async_start(self) -> None:
         if self._running:
@@ -469,7 +470,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
             listener = MotionEventListener(api)
             listeners[key] = listener
         self._motion_listener_unsub = listener.register(
-            self._device_id, self._sn_num, self._note_motion
+            self._device_id, self._sn_num, self._note_motion, self._note_sound
         )
         self._motion_listener = listener
         self._motion_listener_key = key

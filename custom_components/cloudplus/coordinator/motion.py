@@ -129,7 +129,9 @@ class MotionEventListener:
         self._api = api
         self._client = None
         self._callbacks: list[
-            tuple[str, str, Callable[[str, bytes | None], None]]
+            tuple[
+                str, str, Callable[[str, bytes | None], None], Callable[[str], None]
+            ]
         ] = []
         self._lock = threading.Lock()
         self._stop_poll = threading.Event()
@@ -150,8 +152,9 @@ class MotionEventListener:
         device_id: int,
         sn_num: str,
         on_motion: Callable[[str, bytes | None], None],
+        on_sound: Callable[[str], None],
     ) -> Callable[[], None]:
-        item = (str(device_id), str(sn_num), on_motion)
+        item = (str(device_id), str(sn_num), on_motion, on_sound)
         with self._lock:
             self._callbacks.append(item)
 
@@ -381,7 +384,7 @@ class MotionEventListener:
             self._seen_alarm_keys.clear()
 
         with self._lock:
-            devices = {(dev_id, sn) for dev_id, sn, _cb in self._callbacks}
+            devices = {(dev_id, sn) for dev_id, sn, *_cbs in self._callbacks}
         if not devices:
             return True
 
@@ -418,16 +421,17 @@ class MotionEventListener:
 
     def _matching_callbacks(
         self, device_id: str, license_id: str
-    ) -> list[tuple[str, Callable[[str, bytes | None], None]]]:
+    ) -> list[
+        tuple[str, Callable[[str, bytes | None], None], Callable[[str], None]]
+    ]:
         with self._lock:
             callbacks = list(self._callbacks)
-        out: list[tuple[str, Callable[[str, bytes | None], None]]] = []
-        for registered_device_id, registered_sn, callback in callbacks:
-            if device_id and device_id == registered_device_id:
-                out.append((registered_sn, callback))
-            elif not device_id and license_id and license_id == registered_sn:
-                out.append((registered_sn, callback))
-        return out
+        return [
+            (registered_sn, on_motion, on_sound)
+            for registered_device_id, registered_sn, on_motion, on_sound in callbacks
+            if (device_id and device_id == registered_device_id)
+            or (not device_id and license_id and license_id == registered_sn)
+        ]
 
     def _handle_payload(self, payload: bytes) -> None:
         try:
@@ -435,12 +439,18 @@ class MotionEventListener:
         except (ValueError, KeyError, TypeError) as exc:
             _LOGGER.debug("MQTT motion payload parse failed: %s", exc)
             return
-        if not event or not event["is_motion"]:
+        if not event or not (event["is_motion"] or event["is_sound"]):
             return
 
         device_id = event["device_id"]
         license_id = event["license_id"]
         if not device_id and not license_id:
+            return
+        if event["is_sound"]:
+            for _sn, _on_motion, on_sound in self._matching_callbacks(
+                device_id, license_id
+            ):
+                on_sound(str(event["evt_name"]))
             return
 
         motion_type = str(event["evt_name"])
@@ -449,7 +459,9 @@ class MotionEventListener:
         encrypted_image = (
             self._api.download_snapshot(image_url) if image_url else None
         )
-        for sn_num, callback in self._matching_callbacks(device_id, license_id):
+        for sn_num, callback, _on_sound in self._matching_callbacks(
+            device_id, license_id
+        ):
             event_image = (
                 _decode_event_snapshot(encrypted_image, sn_num)
                 if encrypted_image

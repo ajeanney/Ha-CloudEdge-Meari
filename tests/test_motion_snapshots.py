@@ -38,8 +38,9 @@ class MotionSnapshotTests(unittest.TestCase):
         self.listener = MOTION.MotionEventListener(self.api)
         self.received = Mock()
         self.other = Mock()
-        self.listener.register(42, SERIAL, self.received)
-        self.listener.register(43, "other-camera", self.other)
+        self.sound = Mock()
+        self.listener.register(42, SERIAL, self.received, self.sound)
+        self.listener.register(43, "other-camera", self.other, Mock())
 
     def dispatch(self, **overrides):
         event = {"deviceID": "42", "eventType": 2, "imageUrl": IMAGE_URL}
@@ -94,6 +95,17 @@ class MotionSnapshotTests(unittest.TestCase):
         self.dispatch(eventType=21)
         self.api.download_snapshot.assert_not_called()
         self.received.assert_not_called()
+        self.sound.assert_not_called()
+
+    def test_sound_alarms_reach_sound_callback_not_motion(self):
+        self.dispatch(eventType=7)
+        self.dispatch(eventType=6)
+        self.assertEqual(
+            [c.args for c in self.sound.call_args_list], [("Baby cry",), ("Noise",)]
+        )
+        self.received.assert_not_called()
+        self.other.assert_not_called()
+        self.api.download_snapshot.assert_not_called()
 
     def test_poll_startup_seeds_without_notifying_then_delivers_new_image(self):
         old = {"deviceID": "42", "eventType": 2, "msgID": "old", "imageUrl": IMAGE_URL}
