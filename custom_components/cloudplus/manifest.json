@@ -1,7 +1,7 @@
 {
   "domain": "cloudplus",
   "name": "CloudEdge / Meari",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "documentation": "https://github.com/ajeanney/Ha-CloudEdge-Meari",
   "issue_tracker": "https://github.com/ajeanney/Ha-CloudEdge-Meari/issues",
   "codeowners": ["@ajeanney"],
