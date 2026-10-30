@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import socket
 import time
 from typing import Any, Callable
@@ -451,8 +452,11 @@ class CoordinatorStateMixin:
             except (OSError, RuntimeError, ValueError, KeyError) as exc:
                 if attempt + 1 < IOT_READ_ATTEMPTS:
                     _LOGGER.debug("%s retry for %s: %s", context, self._sn_num, exc)
+                    # Back off before the login, not after: a login landing between
+                    # ours and the read is what fails it. Jitter spreads out entries
+                    # that HA reloaded together.
+                    time.sleep(IOT_READ_RETRY_DELAY * (attempt + 1 + random.random()))
                     self._reauthenticate_api(api, context)
-                    time.sleep(IOT_READ_RETRY_DELAY * (attempt + 1))
                     continue
                 self._iot_read_failures += 1
                 if self._iot_read_failures == IOT_READ_WARN_AFTER:
