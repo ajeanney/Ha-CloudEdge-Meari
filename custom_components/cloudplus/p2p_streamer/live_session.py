@@ -16,6 +16,8 @@ from typing import Any, Callable
 from ..meari_signaling import MsgSvrClient
 from ..turn_client import BINDING_REQUEST, BINDING_RESPONSE, TurnClient
 from ..kcp_tunnel import (
+    IVA_MODE_P2P,
+    IVA_MODE_RELAY,
     KCP_CMD_PUSH,
     KCP_WND,
     KcpTunnel,
@@ -360,6 +362,13 @@ class LiveSessionMixin:
                     except OSError:
                         pass
 
+        def _send_iva_handshake() -> None:
+            # Like the native SDK, tell the camera which path we use: it keeps
+            # media on its TURN relay unless the handshake says P2P.
+            peer = confirmed_peer[0]
+            direct = direct_ice_peer[0] is not None or (peer is not None and peer[2])
+            kcp.send_handshake(IVA_MODE_P2P if direct else IVA_MODE_RELAY)
+
         def _handle_kcp_payload(payload: bytes) -> bool:
             nonlocal wait_for_keyframe_until
             before_source = self._source_video_count
@@ -632,7 +641,7 @@ class LiveSessionMixin:
         _seek_direct_ice_before_startup()
         now = time.time()
         _send_lan_connect(now, force=True)
-        kcp.send_handshake()
+        _send_iva_handshake()
         # Official app sends START_LIVE in the very next KCP push (sn=1) without
         # waiting for the camera's handshake echo or any ACK. Mirroring that
         # avoids a class of post-dormancy stalls where the camera ACKs but never
@@ -686,7 +695,7 @@ class LiveSessionMixin:
                     last_client_keyframe_request = now
 
             if now >= last_iva_heartbeat:
-                kcp.send_handshake()
+                _send_iva_handshake()
                 last_iva_heartbeat = now + IVA_HEARTBEAT_S
 
             if live_started and now >= last_heartbeat:

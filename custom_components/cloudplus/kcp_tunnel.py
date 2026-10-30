@@ -49,13 +49,16 @@ IVA_MAGIC = b"\xff\x01"
 IVA_FRAME_SIZE = 20
 IVA_TYPE_HANDSHAKE = 0x7012
 IVA_TYPE_DATA = 0x7010
+# Connect mode byte (offset 0x0D) the native SDK stamps into each handshake.
+IVA_MODE_RELAY = 1
+IVA_MODE_P2P = 2
 VVP_FRAME_MAGIC = b"\x00\x00\x01"
 VVP_FRAME_TYPES = {0xF9, 0xFA, 0xFC, 0xFD, 0xFE}
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _build_iva_frame(type_marker, data, session_id1=None, session_id2=None):
+def _build_iva_frame(type_marker, data, session_id1=None, session_id2=None, mode=0):
     """Build an IVA frame with given type and optional data.
 
     The session IDs (at offsets 4 and 8) must be consistent within a session.
@@ -65,13 +68,14 @@ def _build_iva_frame(type_marker, data, session_id1=None, session_id2=None):
     if session_id2 is None:
         session_id2 = int.from_bytes(os.urandom(4), "little") & 0x0FFFFFFF
     header = struct.pack(
-        "<BBHI I HH I",
+        "<BBHI I BBH I",
         0xFF,
         0x01,
         0,
         session_id1,
         session_id2,
         0,
+        mode,
         type_marker,
         len(data),
     )
@@ -83,9 +87,9 @@ def build_iva_data_frame(data, session_id1=None, session_id2=None):
     return _build_iva_frame(IVA_TYPE_DATA, data, session_id1, session_id2)
 
 
-def build_iva_handshake(session_id1=None, session_id2=None):
+def build_iva_handshake(session_id1=None, session_id2=None, mode=0):
     """Build a 20-byte IVA handshake frame."""
-    return _build_iva_frame(IVA_TYPE_HANDSHAKE, b"", session_id1, session_id2)
+    return _build_iva_frame(IVA_TYPE_HANDSHAKE, b"", session_id1, session_id2, mode)
 
 
 def parse_iva_frame(data):
@@ -294,9 +298,9 @@ class KcpTunnel:
         self.recv_frag_buf = []
         self.recv_frag_meta = []
 
-    def send_handshake(self):
+    def send_handshake(self, mode=0):
         """Send IVA handshake frame wrapped in KCP PUSH segment."""
-        frame = build_iva_handshake()
+        frame = build_iva_handshake(mode=mode)
         self.send_data(frame)
 
     def wrap_iva(self, data):

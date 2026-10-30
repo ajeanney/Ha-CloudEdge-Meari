@@ -154,7 +154,9 @@ native app moves QHD media to the direct host pair once ICE nominates it. The
 engine mirrors that: it gives startup a short direct-ICE grace before KCP, keeps
 rapid ICE checks going while seeking a direct peer, stops candidate fanout once
 direct KCP is confirmed, and gives confirmed direct sessions a longer
-source-idle window before reconnecting.
+source-idle window before reconnecting. The IVA handshake carries the P2P
+connect mode once a direct ICE peer answers, otherwise RELAY; some cameras
+pick their media path from it (see [protocol.md](protocol.md#kcp--iva)).
 
 Legacy PPCS is direct by design. The engine obtains the camera's LAN/public
 endpoints from its device-provided PPCS roots, punches both, and keeps the

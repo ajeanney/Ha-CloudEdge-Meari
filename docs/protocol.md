@@ -171,6 +171,12 @@ ordering, source-idle recovery, wake retries) see [streaming.md](streaming.md).
 - KCP payloads wrap IVA frames:
   - `0x7012` — IVA handshake
   - `0x7010` — IVA data carrying VVP payloads
+- The handshake doubles as a ~3 s heartbeat with fresh random session IDs
+  each time; the camera echoes them. Byte `0x0D` is the native SDK's
+  **connect mode**: `1` RELAY, `2` P2P, `3` P2P+RELAY. Official captures send
+  `2` on the direct host pair and `1` through TURN. Some cameras (ieGeek
+  ZY-C2) keep media on their TURN relay, even on LAN, unless the handshake
+  says P2P. The engine sends P2P once a direct ICE peer answers.
 - The receive window seen in official ACKs is `1024`.
 - ACK packets are commonly sent as compound batches. Recent WAN QHD captures
   show the app ACKing sparsely with up to 16 ACK segments per compound packet,
