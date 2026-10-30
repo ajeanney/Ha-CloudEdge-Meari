@@ -29,8 +29,9 @@ _LOGGER = logging.getLogger(__name__)
 # listener) has just logged in. Each failed attempt logs in again before the next.
 IOT_READ_ATTEMPTS = 3
 IOT_READ_RETRY_DELAY = 1.0
-# Consecutive failed status polls (5 minutes apart) before the failure is logged
-# as a warning; until a read succeeds, the device's settings stay unavailable.
+# Consecutive failed reads (setup prefetch, session start, then status polls 5
+# minutes apart) before the failure is logged as a warning; until a read
+# succeeds, the device's settings stay unavailable.
 IOT_READ_WARN_AFTER = 3
 
 
