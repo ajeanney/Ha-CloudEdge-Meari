@@ -41,7 +41,7 @@ from ..p2p_streamer.codecs import (
 )
 from .iot import parse_capabilities
 from .motion import MotionEventListener
-from .muxer import FfmpegMuxer
+from .muxer import CameraFrameInterval, FfmpegMuxer
 from .state import CoordinatorStateMixin
 from .stream_server import StreamServer
 
@@ -170,6 +170,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         self._last_video_time = 0.0
         self._last_mux_video_mono = 0.0
         self._last_mux_video_timestamp_ms: int | None = None
+        self._live_frame_interval = CameraFrameInterval()
         self._last_p2p_video_gap_time = 0.0
         self._live_mux_ready = False
         self._live_first_video_time = 0.0
@@ -666,21 +667,21 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
                 return None
             return max(LIVE_VIDEO_MIN_INTERVAL, now - last)
 
-        if (
-            not uses_timestamp_timed_mux(self._video_codec, adaptive=adaptive)
-            or timestamp_ms is None
-        ):
-            return None
-
-        current_ts = int(timestamp_ms) & 0xFFFFFFFF
+        current_ts = None if timestamp_ms is None else int(timestamp_ms) & 0xFFFFFFFF
         previous_ts = self._last_mux_video_timestamp_ms
         self._last_mux_video_timestamp_ms = current_ts
-        if previous_ts is None:
-            return None
-        delta_ms = (current_ts - previous_ts) & 0xFFFFFFFF
-        if delta_ms == 0 or delta_ms > 0x7FFFFFFF:
-            return None
-        return max(0.001, delta_ms / 1000.0)
+        delta_ms = (
+            None
+            if current_ts is None or previous_ts is None
+            else (current_ts - previous_ts) & 0xFFFFFFFF
+        )
+
+        if uses_timestamp_timed_mux(self._video_codec, adaptive=adaptive):
+            if not delta_ms or delta_ms > 0x7FFFFFFF:
+                return None
+            return max(0.001, delta_ms / 1000.0)
+
+        return self._live_frame_interval.update(delta_ms)
 
     def _stream_quality(self) -> int | None:
         return self._vvp_quality

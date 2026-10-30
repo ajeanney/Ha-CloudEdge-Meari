@@ -36,6 +36,33 @@ VIDEO_QUEUE_FRAMES = 120
 AUDIO_START_BUFFER_FRAMES = 4
 AUDIO_EMIT_LIMIT = 3
 AUDIO_MAX_LEAD_TICKS = AAC_FRAME_TICKS * 3
+FRAME_RATE_MIN_FRAMES = 30
+FRAME_RATE_GAP_MS = 1000
+
+
+class CameraFrameInterval:
+    """Mean frame interval over the current unbroken run of camera timestamps.
+
+    Per-frame camera stamps jitter, and a hardcoded 15 fps step drifts behind
+    20 fps cameras; the run mean gives a stable PTS step at the real rate.
+    """
+
+    def __init__(self) -> None:
+        self.interval_s: float | None = None
+        self._run_ms = 0
+        self._run_frames = 0
+
+    def update(self, delta_ms: int | None) -> float | None:
+        """Account one frame ``delta_ms`` after the previous one (None restarts)."""
+        if delta_ms is None or delta_ms >= FRAME_RATE_GAP_MS:
+            self._run_ms = self._run_frames = 0
+            return self.interval_s
+        self._run_ms += delta_ms
+        self._run_frames += 1
+        if self._run_frames >= FRAME_RATE_MIN_FRAMES:
+            mean_s = self._run_ms / 1000.0 / self._run_frames
+            self.interval_s = min(max(mean_s, 1.0 / 30.0), 1.0 / 5.0)
+        return self.interval_s
 
 
 class FfmpegMuxer:

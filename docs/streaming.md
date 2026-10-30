@@ -177,8 +177,11 @@ stale client joins, and source-idle recovery, but not while video is current.
 ## Timing rules
 
 - Camera timestamps can be unstable across stalls, especially with HEVC and
-  AUTO. The muxer **generates stable video PTS** at the advertised FPS and
+  AUTO. The muxer **generates stable video PTS** with a fixed step and
   caps audio lead so audio cannot run seconds ahead while video is stalled.
+  The step is the camera's mean frame interval over the current unbroken
+  timestamp run (`CameraFrameInterval`, 15 fps until 30 frames are seen):
+  a hardcoded 15 fps made 20 fps cameras drift behind in MSE/HLS players.
 - **Video PTS stays monotonic across reconnects.** A single muxer feeds one
   unbroken TS stream for the whole live session, but a reconnect restarts the
   ffmpeg child. The muxer carries the PTS base forward instead of resuming at
