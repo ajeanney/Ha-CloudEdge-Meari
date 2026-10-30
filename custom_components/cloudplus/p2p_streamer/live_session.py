@@ -59,6 +59,8 @@ from .session_support import (
     DIRECT_SOURCE_IDLE_RECONNECT_S,
     ICE_KEEPALIVE_INTERVAL_S,
     IVA_HEARTBEAT_S,
+    LIVE_SESSION_CAP_RECONNECT_S,
+    LIVE_SESSION_CAP_WINDOW_S,
     VVP_HEARTBEAT_S,
     _unwrap_iva_payload,
 )
@@ -482,6 +484,14 @@ class LiveSessionMixin:
                     # keep nudging START_LIVE before falling back to reconnect.
                     idle_reconnect_s = max(
                         idle_reconnect_s, DIRECT_SOURCE_IDLE_RECONNECT_S
+                    )
+                cap_min_s, cap_max_s = LIVE_SESSION_CAP_WINDOW_S
+                if (
+                    live_started_at > 0.0
+                    and cap_min_s <= now_ts - stall_time - live_started_at <= cap_max_s
+                ):
+                    idle_reconnect_s = min(
+                        idle_reconnect_s, LIVE_SESSION_CAP_RECONNECT_S
                     )
                 if stall_time >= idle_reconnect_s and not kcp_pending:
                     _LOGGER.warning(

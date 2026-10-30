@@ -36,6 +36,11 @@ ICE_KEEPALIVE_INTERVAL_S = 1.0
 # camera radio/power-save silences. Relay and not-yet-confirmed sessions keep the
 # codec policy's shorter reconnect timeout.
 DIRECT_SOURCE_IDLE_RECONNECT_S = 40.0
+# Some firmwares (ieGeek) end every live session ~118 s after START_LIVE, direct
+# or relayed, without a close message; START_LIVE never revives it. A silence
+# that starts in this window is that cap, so reconnect almost at once.
+LIVE_SESSION_CAP_WINDOW_S = (110.0, 130.0)
+LIVE_SESSION_CAP_RECONNECT_S = 1.5
 # Watchdog counterpart to the above: the coordinator (and debug harness) must not
 # restart a confirmed-direct session underneath the engine's own patience window.
 # Kept above DIRECT_SOURCE_IDLE_RECONNECT_S so the engine manages its session

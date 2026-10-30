@@ -147,6 +147,15 @@ battery camera, which is itself flaky right after a dormancy transition.
 A full reconnect remains the final escalation if the camera still doesn't
 resume.
 
+**Live-session cap.** Some firmwares (ieGeek BM5, ZY-C2) end every live
+session ~118 s after `START_LIVE`, direct or relayed, without a close message.
+Neither `START_LIVE` nor heartbeats revive it. A silence that starts 110–130 s
+into the session is treated as that cap and reconnects after 1.5 s
+(`LIVE_SESSION_CAP_*`). A silence outside that window keeps the normal budget,
+so cameras without a cap don't reconnect on brief radio pauses. The camera
+accepts a second concurrent session with a different client UUID; the official
+app doesn't use one, and neither does the engine.
+
 ## Direct-LAN media
 
 On the camera's LAN, TURN is still allocated and advertised as fallback, but the

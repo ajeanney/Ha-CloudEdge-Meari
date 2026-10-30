@@ -69,6 +69,7 @@ python debug.py --debug stream … 2>&1 | grep -E \
 | `Restarting stale` | HA coordinator watchdog — the engine didn't deliver frames in time. If you see this without retries, dormancy-wake is broken (see [streaming.md](streaming.md)). |
 | `skipped gaps` | KCP-level recovery skipped over a missing range to resume at a clean IVA/VVP boundary. A handful is fine; a flood means persistent loss. |
 | `source-idle` | The reactive `START_LIVE` retry fired because video stopped flowing. Repeated retries mean the camera is silent at the source. |
+| `P2P source idle ~1.5s; reconnecting session` every ~2 min | The camera's live-session cap (~118 s after `START_LIVE`, seen on ieGeek firmware) ended the session and the engine reconnected at once. Expected on those cameras; see [streaming.md](streaming.md#source-idle-recovery-sustaining-the-stream). |
 | `Unexpected coordinator session loop failure` | A per-camera worker hit an unforeseen error. Its final recovery boundary clears stale awake/motion state and starts a fresh authenticated session; entities should not remain frozen. |
 | `MQTT credentials rejected; renewing the cloud session` (debug) | The broker refused the MQTT login (CONNACK *Bad user name or password* / *Not authorized*); the poll thread logs in again for a fresh `mqttSignature`. Followed by `Motion event cloud session reauthenticated` on success. |
 | `Motion event cloud session reauthenticated` | Both motion polling endpoints failed and the listener renewed its cloud credentials before continuing. |
