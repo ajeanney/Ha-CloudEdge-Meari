@@ -137,6 +137,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         self._battery_charging = False
         self._has_lamp = False
         self._lamp_on = False
+        self._iot_read_failures = 0
         self._has_ptz = self.supports_iot("ptz")
 
         self._running = False

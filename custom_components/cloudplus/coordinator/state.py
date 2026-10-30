@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import socket
 import time
 from typing import Any, Callable
@@ -22,6 +23,16 @@ from ..p2p_streamer import (
 from .iot import capability_value, iot_value, normalize_iot_values, supports_feature
 
 _LOGGER = logging.getLogger(__name__)
+
+# Every config entry logs in on its own, and the Meari cloud keeps one session per
+# account, so a read can fail with 401 because another entry (or the motion
+# listener) has just logged in. Each failed attempt logs in again before the next.
+IOT_READ_ATTEMPTS = 3
+IOT_READ_RETRY_DELAY = 1.0
+# Consecutive failed reads (setup prefetch, session start, then status polls 5
+# minutes apart) before the failure is logged as a warning; until a read
+# succeeds, the device's settings stay unavailable.
+IOT_READ_WARN_AFTER = 3
 
 
 class CoordinatorStateMixin:
@@ -214,21 +225,9 @@ class CoordinatorStateMixin:
         self._api = api
         if not api.openapi_server:
             return
-        try:
-            iot = api.get_device_iot_config(self._sn_num)
-        except (OSError, RuntimeError, ValueError, KeyError) as exc:
-            _LOGGER.debug("Lamp/status prefetch failed for %s: %s", self._sn_num, exc)
-            return
-        changed = self._apply_iot_values(iot)
-        changed = self._apply_battery_info(iot) or changed
-        changed = self._apply_video_encryption_info(iot) or changed
-        lamp = self._as_int(self.get_iot_value(IOT_CODE_LAMP))
-        if lamp is not None:
-            changed = changed or not self._has_lamp or self._lamp_on != (lamp == 1)
-            self._has_lamp = True
-            self._lamp_on = lamp == 1
-        if changed:
-            self._fire_update()
+        iot = self._read_iot_config(api, "Lamp/status prefetch")
+        if iot is not None:
+            self._apply_status_iot(iot)
 
     def set_lamp(self, enabled: bool) -> bool:
         return self.set_iot_value(IOT_CODE_LAMP, 1 if enabled else 0)
@@ -437,19 +436,48 @@ class CoordinatorStateMixin:
         api = self._api
         if api is None or not api.openapi_server:
             return
-        iot: dict[str, Any] = {}
-        for attempt in range(2):
+        iot = self._read_iot_config(api, "Status poll")
+        if iot is not None:
+            self._apply_status_iot(iot)
+
+    def _read_iot_config(self, api: MeariApiClient, context: str) -> dict[str, Any] | None:
+        """Read the device's IoT config, logging in again between failed attempts.
+
+        Returns None when every attempt failed. Repeated failures are logged as a
+        warning, because the device's IoT-backed entities stay unavailable until a
+        read succeeds.
+        """
+        for attempt in range(IOT_READ_ATTEMPTS):
             try:
                 iot = api.get_device_iot_config(self._sn_num)
-                break
             except (OSError, RuntimeError, ValueError, KeyError) as exc:
-                if attempt == 0:
-                    _LOGGER.debug("Status poll retry for %s: %s", self._sn_num, exc)
-                    self._reauthenticate_api(api, "Status poll")
+                if attempt + 1 < IOT_READ_ATTEMPTS:
+                    _LOGGER.debug("%s retry for %s: %s", context, self._sn_num, exc)
+                    # Back off before the login, not after: a login landing between
+                    # ours and the read is what fails it. Jitter spreads out entries
+                    # that HA reloaded together.
+                    time.sleep(IOT_READ_RETRY_DELAY * (attempt + 1 + random.random()))
+                    self._reauthenticate_api(api, context)
                     continue
-                _LOGGER.debug("Status poll failed for %s: %s", self._sn_num, exc)
-                return
+                self._iot_read_failures += 1
+                if self._iot_read_failures == IOT_READ_WARN_AFTER:
+                    _LOGGER.warning(
+                        "IoT config for %s could not be read %d times in a row (last error: %s); "
+                        "its settings stay unavailable until a read succeeds",
+                        self._sn_num,
+                        self._iot_read_failures,
+                        exc,
+                    )
+                else:
+                    _LOGGER.debug("%s failed for %s: %s", context, self._sn_num, exc)
+                return None
+            if self._iot_read_failures >= IOT_READ_WARN_AFTER:
+                _LOGGER.info("IoT config for %s readable again", self._sn_num)
+            self._iot_read_failures = 0
+            return iot
+        return None
 
+    def _apply_status_iot(self, iot: dict[str, Any]) -> None:
         changed = self._apply_iot_values(iot)
         changed = self._apply_battery_info(iot) or changed
         changed = self._apply_video_encryption_info(iot) or changed
