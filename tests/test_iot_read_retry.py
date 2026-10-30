@@ -67,6 +67,24 @@ class IotReadRetryTests(unittest.TestCase):
         self.assertEqual(coord.get_iot_value("1022"), 76)
         self.assertEqual(coord._iot_read_failures, 0)
 
+    def test_backoff_happens_before_login_so_the_read_follows_it(self):
+        coord, client = coordinator(), api()
+        calls = []
+        results = [AUTH_FAILED, AUTH_FAILED, SETTINGS]
+
+        def read(_sn):
+            calls.append("read")
+            result = results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        client.get_device_iot_config.side_effect = read
+        client.login.side_effect = lambda: calls.append("login")
+        with patch(f"{STATE}.time.sleep", lambda _s: calls.append("sleep")):
+            coord.prefetch_lamp(client)
+        self.assertEqual(calls, ["read", "sleep", "login", "read", "sleep", "login", "read"])
+
     def test_repeated_failures_are_logged_once_as_a_warning(self):
         coord = coordinator()
         coord._api = api(*([AUTH_FAILED] * 9))
