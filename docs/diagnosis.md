@@ -72,6 +72,7 @@ python debug.py --debug stream … 2>&1 | grep -E \
 | `Unexpected coordinator session loop failure` | A per-camera worker hit an unforeseen error. Its final recovery boundary clears stale awake/motion state and starts a fresh authenticated session; entities should not remain frozen. |
 | `MQTT credentials rejected; renewing the cloud session` (debug) | The broker refused the MQTT login (CONNACK *Bad user name or password* / *Not authorized*); the poll thread logs in again for a fresh `mqttSignature`. Followed by `Motion event cloud session reauthenticated` on success. |
 | `Motion event cloud session reauthenticated` | Both motion polling endpoints failed and the listener renewed its cloud credentials before continuing. |
+| `IoT config for … could not be read N times in a row` | The device's IoT-backed entities (Wi-Fi signal, day/night, PIR, volume, …) stay unavailable until a read succeeds. Each read already retried with a fresh login; the usual cause is a 401 because every config entry and the motion listener log in on their own and the cloud keeps one session per account. Logged once per streak; `IoT config for … readable again` marks recovery. |
 | `Local stream listener stopped` | The HA-facing TCP accept loop exited unexpectedly. The next stream-source request recreates it on a healthy port. |
 
 HA's own `Stream ended; no additional packets` message means that one stream
