@@ -64,6 +64,14 @@ def _is_private_ip(ip: str) -> bool:
 
 def _get_local_ips() -> list[str]:
     ips: list[str] = []
+    # Default-route address first: on HA OS (and WSL/Docker hosts) the hostname
+    # resolves to a bridge address the camera cannot reach.
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ips.append(s.getsockname()[0])
+    except OSError:
+        pass
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
             ip = info[4][0]
@@ -71,15 +79,7 @@ def _get_local_ips() -> list[str]:
                 ips.append(ip)
     except OSError:
         pass
-    if not ips:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            ips.append(s.getsockname()[0])
-            s.close()
-        except OSError:
-            ips.append("0.0.0.0")
-    return ips
+    return ips or ["0.0.0.0"]
 
 
 # ---------------------------------------------------------------------------
