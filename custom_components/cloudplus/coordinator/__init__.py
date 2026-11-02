@@ -41,6 +41,7 @@ from ..p2p_streamer.codecs import (
 )
 from .iot import parse_capabilities
 from .motion import MotionEventListener
+from .ffmpeg_util import video_to_jpeg
 from .muxer import CameraFrameInterval, FfmpegMuxer
 from .state import CoordinatorStateMixin
 from .stream_server import StreamServer
@@ -736,43 +737,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         finally:
             self._snapshot_convert_lock.release()
 
-    @staticmethod
-    def _video_to_jpeg(codec: CodecName | str, payload: bytes) -> bytes | None:
-        video_format = demuxer_for(codec)
-        try:
-            proc = subprocess.run(
-                [
-                    "ffmpeg",
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-f",
-                    video_format,
-                    "-probesize",
-                    "32768",
-                    "-analyzeduration",
-                    "500000",
-                    "-i",
-                    "pipe:0",
-                    "-vframes",
-                    "1",
-                    "-f",
-                    "image2pipe",
-                    "-vcodec",
-                    "mjpeg",
-                    "-q:v",
-                    "5",
-                    "pipe:1",
-                ],
-                input=payload,
-                capture_output=True,
-                timeout=10,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            _LOGGER.debug("Snapshot conversion failed: %s", exc)
-            return None
-        return proc.stdout if proc.returncode == 0 and proc.stdout else None
+    _video_to_jpeg = staticmethod(video_to_jpeg)
 
     def _start_streamer_once(self, *, grab_only: bool = False) -> None:
         if self._stream_thread is not None and self._stream_thread.is_alive():
