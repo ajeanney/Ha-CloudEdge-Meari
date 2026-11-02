@@ -151,10 +151,20 @@ resume.
 session ~118 s after `START_LIVE`, direct or relayed, without a close message.
 Neither `START_LIVE` nor heartbeats revive it. A silence that starts 110–130 s
 into the session is treated as that cap and reconnects after 1.5 s
-(`LIVE_SESSION_CAP_*`). A silence outside that window keeps the normal budget,
-so cameras without a cap don't reconnect on brief radio pauses. The camera
-accepts a second concurrent session with a different client UUID; the official
-app doesn't use one, and neither does the engine.
+(`LIVE_SESSION_CAP_*`), with or without a pending KCP gap (the cap can leave
+one that gap skipping never fills). A silence outside that window keeps the
+normal budget, so cameras without a cap don't reconnect on brief radio pauses.
+The camera accepts a second concurrent session with a different client UUID;
+the official app doesn't use one, and neither does the engine.
+
+**Silent from the start.** A session can get no KCP payload at all after
+`START_LIVE`, on a first wake as well as right after the cap. In those
+sessions the camera sent no UDP from START_LIVE on, the `START_LIVE`
+re-issues never revived it, and a fresh session got video within seconds.
+Healthy sessions get their first frame 0.6–2.1 s after `START_LIVE`. So a
+session with no payload yet reconnects after
+`LIVE_FIRST_PAYLOAD_RECONNECT_S` (8 s, one re-issue) instead of the idle
+budget. Once any payload has arrived, pauses keep the normal budget above.
 
 ## Direct-LAN media
 

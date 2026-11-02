@@ -59,6 +59,7 @@ from .session_support import (
     DIRECT_SOURCE_IDLE_RECONNECT_S,
     ICE_KEEPALIVE_INTERVAL_S,
     IVA_HEARTBEAT_S,
+    LIVE_FIRST_PAYLOAD_RECONNECT_S,
     LIVE_SESSION_CAP_RECONNECT_S,
     LIVE_SESSION_CAP_WINDOW_S,
     VVP_HEARTBEAT_S,
@@ -447,7 +448,19 @@ class LiveSessionMixin:
             if stall_time <= 0.8:
                 return
 
+            cap_min_s, cap_max_s = LIVE_SESSION_CAP_WINDOW_S
+            capped = (
+                live_started_at > 0.0
+                and cap_min_s <= now_ts - stall_time - live_started_at <= cap_max_s
+            )
             gap_backlog = _kcp_gap_backlog()
+            if gap_backlog and capped and stall_time >= LIVE_SESSION_CAP_RECONNECT_S:
+                # The cap leaves a KCP gap that skipping never fills.
+                _LOGGER.warning(
+                    "P2P source idle %.1fs; reconnecting session", stall_time
+                )
+                reconnect_idle_source = True
+                return
             if not gap_backlog:
                 udp_idle = now_ts - last_udp_time if last_udp_time > 0 else -1.0
                 payload_idle = (
@@ -485,13 +498,13 @@ class LiveSessionMixin:
                     idle_reconnect_s = max(
                         idle_reconnect_s, DIRECT_SOURCE_IDLE_RECONNECT_S
                     )
-                cap_min_s, cap_max_s = LIVE_SESSION_CAP_WINDOW_S
-                if (
-                    live_started_at > 0.0
-                    and cap_min_s <= now_ts - stall_time - live_started_at <= cap_max_s
-                ):
+                if capped:
                     idle_reconnect_s = min(
                         idle_reconnect_s, LIVE_SESSION_CAP_RECONNECT_S
+                    )
+                elif last_kcp_payload_time <= 0.0 < live_started_at:
+                    idle_reconnect_s = min(
+                        idle_reconnect_s, LIVE_FIRST_PAYLOAD_RECONNECT_S
                     )
                 if stall_time >= idle_reconnect_s and not kcp_pending:
                     _LOGGER.warning(

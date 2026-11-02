@@ -41,6 +41,11 @@ DIRECT_SOURCE_IDLE_RECONNECT_S = 40.0
 # that starts in this window is that cap, so reconnect almost at once.
 LIVE_SESSION_CAP_WINDOW_S = (110.0, 130.0)
 LIVE_SESSION_CAP_RECONNECT_S = 1.5
+# A camera that sends no media at all after START_LIVE (seen on the first wake
+# and right after the cap) stays silent through START_LIVE re-issues, while a
+# fresh session gets video within seconds. Healthy sessions get their first
+# frame within ~2 s, so reconnect after one re-issue instead of the idle budget.
+LIVE_FIRST_PAYLOAD_RECONNECT_S = 8.0
 # Watchdog counterpart to the above: the coordinator (and debug harness) must not
 # restart a confirmed-direct session underneath the engine's own patience window.
 # Kept above DIRECT_SOURCE_IDLE_RECONNECT_S so the engine manages its session
