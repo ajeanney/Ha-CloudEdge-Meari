@@ -61,6 +61,11 @@ python debug.py stream --device-id <id> --duration 60 --quality SD
 python debug.py --debug stream --device-id <id> --duration 30    # verbose
 ```
 
+For changes to the stream lifecycle (idle stream, wake, live, reconnect,
+muxer, stream server), also run the HA + Frigate end-to-end harness:
+`python tests/e2e/run_e2e.py --mode sim` (needs Docker; `--mode real` uses
+your camera). See [docs/e2e.md](docs/e2e.md).
+
 For protocol changes, cross-check against any local packet captures your
 environment provides (see [`AGENTS.local.md`](AGENTS.local.md)). Lint with
 `pylint custom_components debug_tools debug.py` ([.pylintrc](.pylintrc)) —
@@ -130,3 +135,4 @@ traffic beyond a normal stream.
 | Why is live-start / wake / re-issue shaped this way? | [docs/streaming.md](docs/streaming.md) |
 | Motion / MQTT? | [docs/motion-events.md](docs/motion-events.md) |
 | Triaging a stream that "barely works"? | [docs/diagnosis.md](docs/diagnosis.md) |
+| Does Frigate stay online across sleep / wake? | [docs/e2e.md](docs/e2e.md) |

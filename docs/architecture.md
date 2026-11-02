@@ -15,6 +15,7 @@ How the code is laid out and which file owns what.
 ├── debug_tools/                   # Reusable bits of the CLI harness
 ├── debug.py                       # CLI entry point — `python debug.py …`
 ├── docs/                          # Protocol + dev docs (this folder)
+├── tests/                         # Offline unit tests; tests/e2e/ = HA + Frigate harness
 ├── README.md                      # User-facing
 ├── AGENTS.md                      # AI-assistant onboarding
 └── hacs.json / manifest.json      # HACS + HA metadata
@@ -135,3 +136,10 @@ plus optional analysis (TS / PCM / visual reports under `visual.py`,
 
 This is the canonical way to repro a bug — anything you see in HA should also
 be reproducible with `python debug.py stream …`.
+
+## End-to-end harness
+
+`tests/e2e/` runs the integration inside a real HA container and has a real
+Frigate consume it, to catch what only a consumer sees across sleep / wake /
+live cycles. `run_e2e.py` drives it; `sim/cloudplus_e2e_sim/` is a helper HA
+component that swaps in a fake cloud + fake camera. See [e2e.md](e2e.md).

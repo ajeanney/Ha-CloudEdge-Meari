@@ -1,0 +1,24 @@
+# Same consumer path as README "Using the stream in Frigate / go2rtc":
+# go2rtc resolves stream_source through hass-expose-camera-stream-source on
+# every open, Frigate reads the go2rtc RTSP restream.
+mqtt:
+  enabled: false
+  # Frigate's minimum (it also drives the UI's stats refresh), default 60.
+  stats_interval: 15
+
+go2rtc:
+  streams:
+    cloudplus:
+      - 'echo:curl -fsSL {FRIGATE_HA_URL}/api/camera_stream_source/{FRIGATE_CAMERA_ENTITY} -H "Authorization: Bearer {FRIGATE_HA_TOKEN}"'
+
+cameras:
+  cloudplus:
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/cloudplus
+          roles: [detect, record]
+    detect:
+      enabled: false
+    # Recording on so Frigate's "no new recording segments" watchdog runs too.
+    record:
+      enabled: true

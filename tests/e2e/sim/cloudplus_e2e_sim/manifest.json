@@ -1,0 +1,10 @@
+{
+  "domain": "cloudplus_e2e_sim",
+  "name": "CloudPlus e2e simulated camera",
+  "codeowners": ["@ajeanney"],
+  "dependencies": [],
+  "documentation": "https://github.com/ajeanney/Ha-CloudEdge-Meari/blob/main/docs/e2e.md",
+  "iot_class": "local_push",
+  "requirements": [],
+  "version": "0.0.1"
+}

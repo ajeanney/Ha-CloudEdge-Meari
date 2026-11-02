@@ -1,0 +1,15 @@
+# Minimal HA for the e2e harness. run_e2e.py appends `cloudplus_e2e_sim:` in sim mode.
+homeassistant:
+  name: cloudplus-e2e
+  time_zone: UTC
+
+frontend:
+api:
+config:
+stream:
+
+logger:
+  default: warning
+  logs:
+    custom_components.cloudplus: debug
+    custom_components.cloudplus_e2e_sim: debug

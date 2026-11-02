@@ -1,0 +1,35 @@
+# Driven by run_e2e.py, which sets every ${VAR} below. See docs/e2e.md.
+# Host networking: real mode needs LAN P2P like a normal HA install, and both
+# modes then share one topology (Frigate reaches HA's stream port directly).
+name: cloudplus-e2e
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:${HA_VERSION}
+    network_mode: host
+    environment:
+      TZ: UTC
+      SIM_WAKE_DELAY_S: ${SIM_WAKE_DELAY_S}
+      SIM_SESSION_CAP_S: ${SIM_SESSION_CAP_S}
+    volumes:
+      - ${RUN_DIR}/ha:/config
+      - ${CLOUDPLUS_DIR}:/config/custom_components/cloudplus:ro
+      - ${CACHE_DIR}/expose_camera_stream_source:/config/custom_components/expose_camera_stream_source:ro
+      - ${REPO_DIR}/tests/e2e/sim/cloudplus_e2e_sim:/config/custom_components/cloudplus_e2e_sim:ro
+
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:${FRIGATE_VERSION}
+    network_mode: host
+    shm_size: 256mb
+    environment:
+      TZ: UTC
+      # Frigate 0.18 drops go2rtc echo:/exec: sources without this.
+      GO2RTC_ALLOW_ARBITRARY_EXEC: "true"
+      FRIGATE_HA_URL: http://127.0.0.1:8123
+      FRIGATE_HA_TOKEN: ${FRIGATE_HA_TOKEN}
+      FRIGATE_CAMERA_ENTITY: ${FRIGATE_CAMERA_ENTITY}
+    volumes:
+      - ${RUN_DIR}/frigate:/config
+      - ${RUN_DIR}/frigate/media:/media/frigate
+    tmpfs:
+      - /tmp/cache:size=256m
