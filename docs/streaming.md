@@ -190,6 +190,13 @@ stale client joins, and source-idle recovery, but not while video is current.
   tolerates it, so the debug harness never reproduces this).
 - **Do not inject old video frames** to hide loss. It creates visible time
   travel.
+- The one exception is the **still bridge**. A snap camera that is awake
+  with no live video for `LIVE_STILL_BRIDGE_S` (3 s), during a wake, a stall
+  or a reconnect, gets the idle still (the latest keyframe) at the idle rate
+  in whatever muxer is running, so consumers like Frigate (offline after
+  20 s without frames) never see the stream die. It shows a freeze, not a
+  replay: live resumes only from its own next keyframe, with its PTS steps
+  restarted.
 - When the source stops sending frames, the integration can only recover
   KCP, request keyframes, reconnect, or wait. It cannot make missing
   high-bitrate camera frames appear without transcoding or fabricating

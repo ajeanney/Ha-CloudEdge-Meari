@@ -66,6 +66,7 @@ python debug.py --debug stream … 2>&1 | grep -E \
 | `Dormant coturn unavailable; waking before relay negotiation` | This camera withholds TURN credentials while dormant. The engine is waking on the current MsgSvr session, waiting briefly for its `online` push, and retrying coturn without changing clusters. |
 | `Coturn ready after pre-relay wake` | The older dormant-wake fallback succeeded; TURN allocation and SDP/ICE follow next. |
 | `TURN relay probe ok\|failed for … (Xs, background)` | The native relay probe finished. It runs in the background and never gates media, so `failed` is harmless on its own; `X` shows how long a synchronous probe would have delayed live-start (~10 s on relays that accept but never answer). These messages remain under the engine logger. |
+| `No live video for Xs on SN; bridging with the still frame` (debug) | The camera is awake but no live frame reached the muxer for 3 s (wake, stall, reconnect), so the idle still fills in until live resumes on a keyframe. One per wake is normal; frequent ones mid-session point at the stall itself. |
 | `Restarting stale` | HA coordinator watchdog — the engine didn't deliver frames in time. If you see this without retries, dormancy-wake is broken (see [streaming.md](streaming.md)). |
 | `skipped gaps` | KCP-level recovery skipped over a missing range to resume at a clean IVA/VVP boundary. A handful is fine; a flood means persistent loss. |
 | `source-idle` | The reactive `START_LIVE` retry fired because video stopped flowing. Repeated retries mean the camera is silent at the source. |

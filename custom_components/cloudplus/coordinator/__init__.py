@@ -66,6 +66,9 @@ LIVE_VIDEO_MIN_INTERVAL = 1.0 / 30.0
 LIVE_ADAPTIVE_IPC_MUX_HOLD_S = 1.0
 LIVE_ADAPTIVE_IPC_MUX_QUIET_S = 1.2
 LIVE_P2P_VIDEO_GAP_S = 1.0
+# Awake without live video for this long (wake, stall, reconnect): keep the
+# still frame flowing so consumers like Frigate never see the stream die.
+LIVE_STILL_BRIDGE_S = 3.0
 SNAPSHOT_CARD_REFRESH_INTERVAL = 3.0
 SNAPSHOT_CARD_REQUEST_TTL = 30.0
 
@@ -170,6 +173,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         self._last_p2p_audio_time = 0.0
         self._last_video_time = 0.0
         self._last_mux_video_mono = 0.0
+        self._live_video_written_at = 0.0
         self._last_mux_video_timestamp_ms: int | None = None
         self._live_frame_interval = CameraFrameInterval()
         self._last_p2p_video_gap_time = 0.0
@@ -546,6 +550,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
     def _idle_loop(self) -> None:
         next_frame = time.monotonic()
         pts_interval = IDLE_REFRESH_INTERVAL
+        awake_since, bridging = 0.0, False
         while self._running and not self._idle_stop.is_set():
             if self._idle_stream_reset.is_set():
                 self._idle_stream_reset.clear()
@@ -554,9 +559,20 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
                 next_frame = time.monotonic()
 
             if self._camera_awake:
-                next_frame = time.monotonic()
-                self._idle_stop.wait(0.1)
+                now = next_frame = time.monotonic()
+                awake_since = awake_since or now
+                stalled_s = now - max(awake_since, self._live_video_written_at)
+                if stalled_s < LIVE_STILL_BRIDGE_S or not self._stream_server.client_count:
+                    bridging = False
+                    self._idle_stop.wait(0.1)
+                    continue
+                if not bridging:
+                    bridging = True
+                    self._begin_live_still_bridge(stalled_s)
+                self._write_live_still()
+                self._idle_stop.wait(IDLE_REFRESH_INTERVAL)
                 continue
+            awake_since, bridging = 0.0, False
 
             with self._idle_frame_lock:
                 frame = self._idle_video_frame
@@ -583,6 +599,29 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
                 next_frame = time.monotonic() + IDLE_REFRESH_INTERVAL
                 delay = IDLE_REFRESH_INTERVAL
             self._idle_stop.wait(delay)
+
+    def _begin_live_still_bridge(self, stalled_s: float) -> None:
+        _LOGGER.debug(
+            "No live video for %.1fs on %s; bridging with the still frame",
+            stalled_s,
+            self._sn_num,
+        )
+        # The still is a keyframe: live resumes on its own next keyframe, and
+        # its PTS steps restart from there.
+        self._stream_started_keyframe = False
+        self._reset_live_mux_timing()
+
+    def _write_live_still(self) -> None:
+        with self._idle_frame_lock:
+            frame, codec = self._idle_video_frame, self._idle_video_codec
+        if not frame:
+            return
+        # Into whichever muxer runs: restarting it with idle settings would
+        # cost an ffmpeg respawn and a discontinuity.
+        if not self._muxer.running:
+            self._muxer.start(codec, advertised_fps=IDLE_ADVERTISED_FPS)
+        if self._muxer.codec == CodecName.parse(codec):
+            self._muxer.write_video(frame, pts_interval_s=IDLE_REFRESH_INTERVAL)
 
     def _prime_idle_stream(self) -> None:
         with self._idle_frame_lock:
@@ -808,6 +847,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
                 payload,
                 pts_interval_s=self._next_live_video_interval(now, timestamp_ms),
             )
+            self._live_video_written_at = now
             if grab_only and frame_is_keyframe and self._p2p_streamer is not None:
                 self._p2p_streamer.request_stop()
 

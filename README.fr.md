@@ -228,6 +228,9 @@ que la caméra dort :
 - Quand la caméra se réveille, les images en direct prennent le relais **sur la
   même socket TCP**, sans reconnexion, sans renégociation PAT/PMT, et sans
   qu'aucun client ne voie la source passer hors ligne.
+- Quand la caméra est réveillée mais que la vidéo en direct s'interrompt plus
+  de 3 s (le réveil lui-même, un blocage, une reconnexion), l'image fixe
+  prend le relais jusqu'au retour du direct.
 
 C'est la différence entre Frigate qui "fonctionne simplement" avec ces caméras
 et Frigate pratiquement inutilisable avec elles.

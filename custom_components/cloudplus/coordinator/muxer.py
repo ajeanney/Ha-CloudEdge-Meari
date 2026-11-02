@@ -111,6 +111,10 @@ class FfmpegMuxer:
     def codec(self) -> CodecName:
         return self._codec
 
+    @property
+    def running(self) -> bool:
+        return self._proc is not None
+
     def start(
         self,
         codec: CodecName | str,

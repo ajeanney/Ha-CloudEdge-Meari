@@ -95,7 +95,9 @@ adding suppressions.
 - **Video is copied, audio is encoded.** No video transcoding. Don't add
   it. H.264 *and* HEVC must keep flowing through unchanged.
 - **Don't fabricate frames.** On stall: KCP recovery → `START_LIVE`
-  re-issue → reconnect. Old frames create visible time travel.
+  re-issue → reconnect. Old frames create visible time travel. Only the
+  idle still may bridge an awake stall, and live resumes on a fresh keyframe
+  (see [docs/streaming.md](docs/streaming.md)).
 - **One Meari MQTT session per account.** See
   [docs/motion-events.md](docs/motion-events.md).
 - **Config-entry topology**: one account entry (no `sn_num`) + N camera

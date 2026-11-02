@@ -213,6 +213,9 @@ while the camera is asleep:
 - When the camera wakes up, the live frames take over **on the same TCP
   socket**, with no reconnect, no PAT/PMT renegotiation, and no client
   seeing the source go offline.
+- While the camera is awake but live video pauses for more than 3 s (the
+  wake itself, a stall, a reconnect), the still frame fills in until live
+  video is back.
 
 This is the difference between Frigate "just working" with these cameras
 and Frigate being effectively unusable with them.
