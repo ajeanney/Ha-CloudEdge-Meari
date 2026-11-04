@@ -50,6 +50,16 @@ class SleepButtonTests(unittest.TestCase):
         self.assertFalse(coord._wake_event.is_set())
         self.assertEqual(coord._live_deadline, 0.0)
 
+    def test_motion_clears_after_timeout_while_held(self):
+        coord = make_coordinator()
+        coord.sleep_camera()
+        coord._note_motion("pir")
+        coord._track_motion(time.monotonic())
+        self.assertTrue(coord._motion_detected)
+        coord._track_motion(time.monotonic() + coord._motion_timeout)
+        self.assertFalse(coord._motion_detected)
+        self.assertEqual(coord._live_deadline, 0.0)
+
     def test_wake_clears_the_hold(self):
         coord = make_coordinator()
         coord.sleep_camera()

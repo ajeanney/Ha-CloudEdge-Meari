@@ -338,6 +338,17 @@ class CoordinatorStateMixin:
         duration = float(seconds if seconds is not None else self._motion_timeout)
         self._live_deadline = max(self._live_deadline, time.monotonic() + duration)
 
+    def _track_motion(self, now: float) -> None:
+        """Keep a sleeping snap camera live through motion, or let Motion clear."""
+        if not self._motion_detected:
+            return
+        motion_until = self._last_motion_time + float(self._motion_timeout)
+        if self._motion_wake_enabled and not self._sleep_hold:
+            self._live_deadline = max(self._live_deadline, motion_until)
+        elif now >= motion_until:
+            # Only the end of a live session clears Motion, and none runs here.
+            self._set_motion(False)
+
     def _note_motion(self, motion_type: str, event_image: bytes | None = None) -> None:
         if event_image:
             self._latest_image = event_image
