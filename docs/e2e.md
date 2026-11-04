@@ -55,7 +55,10 @@ HA 2026.9.2 and Frigate 0.18.0; override with `--ha-version` /
 4. Runs the scenario, sampling every second: `startup` (until Frigate first
    reports frames), then `sleep`, then per cycle it sets the motion timeout,
    presses the wake button, and records `awakeN` until HA shows the camera
-   `streaming` and then `idle` again, followed by `sleepN`.
+   `streaming` and then `idle` again, followed by `sleepN`. Last, it presses
+   wake, records `awakeS` for `--sim-wake-delay` + 40 s, presses the sleep
+   button, and records `sleepS`, which must show HA's camera `idle` within
+   30 s.
 
 ## Pass / fail
 
