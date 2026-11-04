@@ -15,8 +15,11 @@ payload shapes to expect.
   API.
 - The broker certificate is **verified** (system CAs and hostname): the
   connection carries the account's `access_id` and `mqttSignature`, so an
-  unverified session would hand them to anyone able to intercept it. The US
-  broker (`events-*.mearicloud.com`, port 1883 with TLS 1.2) verifies cleanly.
+  unverified session would hand them to anyone able to intercept it. The EU,
+  US and AS brokers (`events-{eu,us,as}ce.mearicloud.com`, port 1883 with
+  TLS 1.2, GoDaddy `*.mearicloud.com`) verify cleanly. A broker that fails
+  verification never connects (Paho retries silently), so motion falls back
+  to the event poll.
 - MQTT parameters as used by the apps and this integration:
   - **Client id** = numeric user id
   - **Username** = platform access id
