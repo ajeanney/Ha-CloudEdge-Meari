@@ -158,6 +158,7 @@ dynamique découvert à partir des valeurs du modèle IoT de la caméra.
 | Motion Timeout      | `number`        | Durée pendant laquelle la caméra reste réveillée après un mouvement (10–600 s). |
 | Stream Host Mode    | `select`        | `IP Address` (par défaut) ou `Docker Hostname` pour l'URL du flux — voir [Notes sur la diffusion](#notes-sur-la-diffusion). |
 | Stream Quality      | `select`        | `AUTO`, `SD`, `HD`, `QHD`, … — les profils annoncés, ou le repli HD/SD natif des caméras plus anciennes. |
+| Lens                | `select`        | Caméras à double objectif uniquement : l'objectif affiché par le flux (ex. `Pan-tilt (source 4)` / `Fixed (source 3)`). Le changement prend effet à la prochaine image clé, sans reconnexion. |
 
 ### Entités IoT (selon le modèle)
 

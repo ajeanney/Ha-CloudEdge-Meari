@@ -87,8 +87,8 @@ def frame_lens(chunk: bytes) -> int | None:
     """Return the ``msc`` v_id a raw VVP video frame came from, else None.
 
     The lens is the high nibble of header byte ``0x16`` (I-frame) or ``0x0e``
-    (P-frame), 4 bytes after the sequence field (0x40 = v_id 4, 0x30 = v_id 3
-    on firmware B415B). Both offsets are in the clear part of the header.
+    (P-frame), 6 bytes after the start of the sequence field (0x40 = v_id 4,
+    0x30 = v_id 3 on firmware B415B). Both offsets are in the clear part of the header.
     """
     offset = {0xFC: 0x16, 0xFD: 0x0E}.get(chunk[3] if len(chunk) > 3 else -1)
     if offset is None or len(chunk) <= offset:
