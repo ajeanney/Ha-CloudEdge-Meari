@@ -16,7 +16,7 @@ CONF_VIDEO_PASSWORD = "video_password"
 CONF_STREAM_QUALITY = "stream_quality"
 CONF_LENS = "lens"
 CONF_STREAM_HOST_MODE = "stream_host_mode"
-STREAM_HOST_MODES = ("ip", "docker")
+STREAM_HOST_MODES = ("ip", "docker", "local")
 
 DEFAULT_MOTION_TIMEOUT = 120
 DEFAULT_COUNTRY_CODE = "FR"

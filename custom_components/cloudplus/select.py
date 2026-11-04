@@ -24,6 +24,7 @@ from .meari_commands import (
 STREAM_HOST_OPTIONS: dict[str, str] = {
     "ip": "IP Address",
     "docker": "Docker Hostname",
+    "local": "Local only",
 }
 _OPTION_TO_KEY = {v: k for k, v in STREAM_HOST_OPTIONS.items()}
 
@@ -213,7 +214,7 @@ class CloudEdgeMeariIotSelect(CloudEdgeMeariIotEntity, SelectEntity):
 
 
 class CloudEdgeMeariStreamHostSelect(CloudEdgeMeariEntity, SelectEntity):
-    """Select entity to choose between IP address or Docker hostname for stream URL."""
+    """Select the stream URL host: LAN IP, Docker hostname, or loopback only."""
 
     _attr_name = "Stream Host Mode"
     _attr_icon = "mdi:ip-network"
@@ -238,7 +239,10 @@ class CloudEdgeMeariStreamHostSelect(CloudEdgeMeariEntity, SelectEntity):
         options = dict(self._entry.options)
         options[CONF_STREAM_HOST_MODE] = key
         self.hass.config_entries.async_update_entry(self._entry, options=options)
-        self._coordinator.set_stream_host_mode(key)
+        # May rebind the stream server, which joins its accept thread.
+        await self.hass.async_add_executor_job(
+            self._coordinator.set_stream_host_mode, key
+        )
         self.async_write_ha_state()
 
 

@@ -164,7 +164,9 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         self._idle_stream_reset = threading.Event()
         self._stream_restart = threading.Event()
 
-        self._stream_server = StreamServer(self._request_stream_bootstrap)
+        self._stream_server = StreamServer(
+            self._request_stream_bootstrap, self._stream_bind_host
+        )
         self._muxer = FfmpegMuxer(self._stream_server.broadcast)
 
         self._video_codec = CodecName.HEVC

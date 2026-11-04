@@ -107,7 +107,13 @@ class _Client:
 class StreamServer:
     """Local TCP server that fans the muxed MPEG-TS stream out to clients."""
 
-    def __init__(self, on_missing_bootstrap: Callable[[], bool] | None = None) -> None:
+    def __init__(
+        self,
+        on_missing_bootstrap: Callable[[], bool] | None = None,
+        host: str = "0.0.0.0",
+    ) -> None:
+        # Address the next start() binds; "127.0.0.1" keeps the LAN out.
+        self.host = host
         self._sock: socket.socket | None = None
         self._port = 0
         self._running = False
@@ -149,7 +155,7 @@ class StreamServer:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                sock.bind(("0.0.0.0", 0))
+                sock.bind((self.host, 0))
                 sock.listen(8)
                 sock.settimeout(1.0)
             except OSError:
@@ -181,6 +187,8 @@ class StreamServer:
             accept_thread = self._accept_thread
             self._sock = None
             self._accept_thread = None
+            # Under the lock: a concurrent start() must not see its port zeroed.
+            self._port = 0
         if sock is not None:
             try:
                 sock.close()
@@ -197,7 +205,6 @@ class StreamServer:
                     pass
             self._clients.clear()
             self._bootstrap.reset()
-        self._port = 0
 
     def bootstrap_snapshot(self) -> bytes:
         with self._lock:

@@ -149,7 +149,7 @@ discovered from the camera's IoT model values.
 | Sleep Camera        | `button`        | End the live session now. Motion keeps updating the Motion sensor but does not wake the camera again until Wake Camera is pressed or Wake on Motion is turned on. |
 | Wake on Motion      | `switch`        | Toggle auto-wake when a motion event fires. |
 | Motion Timeout      | `number`        | How long the camera stays awake after motion (10–600 s). |
-| Stream Host Mode    | `select`        | `IP Address` (default) or `Docker Hostname` for the stream URL — see [Streaming notes](#streaming-notes). |
+| Stream Host Mode    | `select`        | `IP Address` (default), `Docker Hostname` or `Local only` for the stream URL — see [Streaming notes](#streaming-notes). |
 | Stream Quality      | `select`        | `AUTO`, `SD`, `HD`, `QHD`, … — advertised profiles, or the native HD/SD fallback for legacy cameras. |
 | Lens                | `select`        | Dual-lens cameras only: which lens the stream shows (e.g. `Pan-tilt (source 4)` / `Fixed (source 3)`). Switching takes effect on the next keyframe, without reconnecting. |
 
@@ -238,8 +238,14 @@ MPEG-TS server is advertised:
 - `Docker Hostname` — uses the container's hostname instead. Pick this if
   Frigate / go2rtc runs in the **same Docker network** as HA and resolves
   containers by name.
+- `Local only` — binds the stream server to `127.0.0.1` and advertises
+  `127.0.0.1`, so nothing outside the HA host can even connect. Enough when
+  only HA itself (live view, its built-in go2rtc) consumes the stream; a
+  Frigate on another machine or in a bridge-networked container can't reach
+  it.
 
-The choice is saved and survives a restart.
+The choice is saved and survives a restart. Switching to or from `Local only`
+moves the stream to a new port, and open viewers reconnect.
 
 ### Using the stream in Frigate / go2rtc
 
@@ -333,7 +339,8 @@ Common issues:
   for up to ~45 s; if it consistently fails, your account may not own the
   wake right (re-share from the app).
 - **Frigate loses the source** — flip *Stream Host Mode* between `IP
-  Address` and `Docker Hostname` depending on your network topology.
+  Address` and `Docker Hostname` depending on your network topology
+  (`Local only` only works if Frigate shares HA's host network).
 
 ---
 

@@ -166,7 +166,13 @@ class CoordinatorStateMixin:
         return self._stream_host_mode
 
     @property
+    def _stream_bind_host(self) -> str:
+        return "127.0.0.1" if self._stream_host_mode == "local" else "0.0.0.0"
+
+    @property
     def stream_host(self) -> str:
+        if self._stream_host_mode == "local":
+            return "127.0.0.1"
         if self._stream_host_mode == "docker":
             return socket.gethostname()
         try:
@@ -223,6 +229,12 @@ class CoordinatorStateMixin:
         if mode not in STREAM_HOST_MODES:
             return
         self._stream_host_mode = mode
+        if self._stream_server.host != self._stream_bind_host:
+            # Rebind: also drops clients that came in on the old address.
+            self._stream_server.host = self._stream_bind_host
+            self._stream_server.stop()
+            if self._running:
+                self._stream_server.start()
         self._fire_update()
 
     def set_motion_wake_enabled(self, enabled: bool) -> None:

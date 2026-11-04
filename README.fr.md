@@ -157,7 +157,7 @@ dynamique découvert à partir des valeurs du modèle IoT de la caméra.
 | Sleep Camera        | `button`        | Termine la session live tout de suite. Le capteur Motion continue de se mettre à jour, mais le mouvement ne réveille plus la caméra jusqu'à un appui sur Wake Camera ou l'activation de Wake on Motion. |
 | Wake on Motion      | `switch`        | Active/désactive le réveil automatique sur événement de mouvement. |
 | Motion Timeout      | `number`        | Durée pendant laquelle la caméra reste réveillée après un mouvement (10–600 s). |
-| Stream Host Mode    | `select`        | `IP Address` (par défaut) ou `Docker Hostname` pour l'URL du flux — voir [Notes sur la diffusion](#notes-sur-la-diffusion). |
+| Stream Host Mode    | `select`        | `IP Address` (par défaut), `Docker Hostname` ou `Local only` pour l'URL du flux — voir [Notes sur la diffusion](#notes-sur-la-diffusion). |
 | Stream Quality      | `select`        | `AUTO`, `SD`, `HD`, `QHD`, … — les profils annoncés, ou le repli HD/SD natif des caméras plus anciennes. |
 | Lens                | `select`        | Caméras à double objectif uniquement : l'objectif affiché par le flux (ex. `Pan-tilt (source 4)` / `Fixed (source 3)`). Le changement prend effet à la prochaine image clé, sans reconnexion. |
 
@@ -254,8 +254,14 @@ serveur MPEG-TS est annoncée :
 - `Docker Hostname` — utilise plutôt le nom d'hôte du conteneur. À choisir si
   Frigate / go2rtc tourne dans le **même réseau Docker** que HA et résout les
   conteneurs par leur nom.
+- `Local only` — lie le serveur de flux à `127.0.0.1` et annonce `127.0.0.1` :
+  rien en dehors de l'hôte HA ne peut même s'y connecter. Suffisant quand seul
+  HA (vue en direct, son go2rtc intégré) consomme le flux ; un Frigate sur une
+  autre machine ou dans un conteneur en réseau bridge ne pourra pas le joindre.
 
-Le choix est enregistré et survit à un redémarrage.
+Le choix est enregistré et survit à un redémarrage. Passer à `Local only` ou
+en sortir déplace le flux sur un nouveau port, et les lecteurs ouverts se
+reconnectent.
 
 ### Utiliser le flux dans Frigate / go2rtc
 
@@ -354,7 +360,8 @@ Problèmes courants :
   répétée, votre compte n'a peut-être pas le droit de réveil (repassez par un
   partage depuis l'application).
 - **Frigate perd la source** — basculez *Stream Host Mode* entre `IP
-  Address` et `Docker Hostname` selon la topologie de votre réseau.
+  Address` et `Docker Hostname` selon la topologie de votre réseau
+  (`Local only` ne fonctionne que si Frigate partage le réseau hôte de HA).
 
 ---
 
