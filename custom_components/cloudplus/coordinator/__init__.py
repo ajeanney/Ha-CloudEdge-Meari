@@ -863,12 +863,11 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
                 device=self._device,
                 on_video=on_video,
                 on_audio=on_audio,
-                on_login=lambda: None,
-                on_disconnect=lambda: None,
                 vvp_quality=self._stream_quality(),
                 video_password=self._video_password,
                 client_id=self.get_iot_value(1),
             )
+            streamer.lens_v_id = self.lens_v_id
             self._p2p_streamer = streamer
             try:
                 streamer.run_session()

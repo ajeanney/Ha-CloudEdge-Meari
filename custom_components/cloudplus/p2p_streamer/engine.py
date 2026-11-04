@@ -59,7 +59,7 @@ from .ppcs import (
     PpcsMediaFrameBuffer,
     PpcsTransport,
 )
-from .quality import stream_id_for_quality
+from .quality import keep_lens_frame, stream_id_for_quality
 from .live_session import LiveSessionMixin
 from .session_support import (
     AUTH_FALLBACK_RESULT,
@@ -84,6 +84,9 @@ _PPCS_FRAME_TYPES = {
 
 class P2PStreamer(LiveSessionMixin):
     """Run a Meari stream over its advertised WebRTC or legacy PPCS path."""
+
+    lens_v_id: int | None = None  # dual-lens cameras: msc v_id to keep
+    _next_lens_v_id: int | None = None
 
     def __init__(
         self,
@@ -314,6 +317,10 @@ class P2PStreamer(LiveSessionMixin):
 
         return parse_stream_frame(chunk)
 
+    def switch_lens(self, v_id: int) -> None:
+        """Show another lens from its next I-frame on (no reconnect)."""
+        self._next_lens_v_id = v_id
+
     def _handle_stream_payload(
         self, payload: bytes, *, wait_for_keyframe: bool = False
     ) -> bool:
@@ -321,6 +328,12 @@ class P2PStreamer(LiveSessionMixin):
         for chunk in split_stream_frames(payload):
             if len(chunk) < 4 or chunk[0:3] != b"\x00\x00\x01":
                 continue
+            if self.lens_v_id is not None:
+                keep, self.lens_v_id = keep_lens_frame(
+                    chunk, self.lens_v_id, self._next_lens_v_id
+                )
+                if not keep:
+                    continue
             parsed = self._parse_stream_chunk(chunk)
             if not parsed:
                 continue

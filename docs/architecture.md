@@ -52,7 +52,7 @@ derived from the camera's IoT model:
 | `button.py` | Wake Camera. | — |
 | `sensor.py` | Battery + Charge Status. | Temperature, Humidity, WiFi Signal. |
 | `number.py` | Motion Timeout. | Sensitivities, intervals, brightness, volume… |
-| `select.py` | Stream Host Mode, Stream Quality. | Day/Night, SD record, anti-flicker… |
+| `select.py` | Stream Host Mode, Stream Quality, Lens (dual-lens cameras). | Day/Night, SD record, anti-flicker… |
 | `switch.py` | Wake on Motion. | LED, PIR, ONVIF, HomeKit, sirens… |
 
 IoT entities are gated on `coordinator.supports_iot(feature)` or

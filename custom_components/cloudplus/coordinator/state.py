@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from ..api import MeariApiClient
 from ..const import (
+    CONF_LENS,
     IOT_CODE_BATTERY_PERCENT,
     IOT_CODE_CHARGE_STATUS,
     IOT_CODE_LAMP,
@@ -17,6 +18,7 @@ from ..const import (
     PTZ_DIRECTIONS,
 )
 from ..p2p_streamer import (
+    lens_sources,
     quality_profile_labels,
     supports_adaptive_stream,
 )
@@ -177,6 +179,31 @@ class CoordinatorStateMixin:
     @property
     def vvp_quality(self) -> int | None:
         return self._vvp_quality
+
+    @property
+    def lens_sources(self) -> dict[int, str]:
+        return lens_sources(self._device)
+
+    @property
+    def lens_v_id(self) -> int | None:
+        """Chosen lens of a dual-lens camera: the saved option, else the first lens."""
+        lenses = self.lens_sources
+        entry = getattr(self, "_entry", None)
+        saved = entry.options.get(CONF_LENS) if entry is not None else None
+        if saved is not None and int(saved) in lenses:
+            return int(saved)
+        return next(iter(lenses), None)
+
+    def set_lens(self, v_id: int) -> None:
+        """Switch a dual-lens camera to another lens on the running session.
+
+        Both lenses are always streamed, so this only changes the streamer's
+        frame filter; the choice itself is saved in the entry options.
+        """
+        streamer = getattr(self, "_p2p_streamer", None)
+        if streamer is not None and v_id in self.lens_sources:
+            streamer.switch_lens(v_id)
+        self._fire_update()
 
     def set_vvp_quality(self, quality: int | None) -> None:
         self._vvp_quality = quality
