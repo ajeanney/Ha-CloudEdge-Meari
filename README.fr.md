@@ -154,6 +154,7 @@ dynamique découvert à partir des valeurs du modèle IoT de la caméra.
 | Battery             | `sensor`        | Pourcentage de charge (caméras sur batterie). |
 | Charge Status       | `sensor`        | Statut textuel Décharge / En charge / Plein. |
 | Wake Camera         | `button`        | Réveille la caméra manuellement. |
+| Sleep Camera        | `button`        | Termine la session live tout de suite. Le capteur Motion continue de se mettre à jour, mais le mouvement ne réveille plus la caméra jusqu'à un appui sur Wake Camera ou l'activation de Wake on Motion. |
 | Wake on Motion      | `switch`        | Active/désactive le réveil automatique sur événement de mouvement. |
 | Motion Timeout      | `number`        | Durée pendant laquelle la caméra reste réveillée après un mouvement (10–600 s). |
 | Stream Host Mode    | `select`        | `IP Address` (par défaut) ou `Docker Hostname` pour l'URL du flux — voir [Notes sur la diffusion](#notes-sur-la-diffusion). |

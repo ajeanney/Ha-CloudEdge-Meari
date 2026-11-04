@@ -38,8 +38,8 @@ IOT_READ_WARN_AFTER = 3
 class CoordinatorStateMixin:
     """Mixin exposing availability and IoT-derived state to HA entities."""
 
-    # Set by the Sleep button, cleared by Wake: motion still updates the sensor
-    # but does not wake the camera again.
+    # Set by the Sleep button, cleared by Wake or by turning Wake on Motion on:
+    # motion still updates the sensor but does not wake the camera again.
     _sleep_hold = False
 
     _latest_image_source: str
@@ -194,7 +194,9 @@ class CoordinatorStateMixin:
 
     def set_motion_wake_enabled(self, enabled: bool) -> None:
         self._motion_wake_enabled = bool(enabled)
-        if self._motion_wake_enabled and self._motion_detected and not self._sleep_hold:
+        if self._motion_wake_enabled:
+            self._sleep_hold = False
+        if self._motion_wake_enabled and self._motion_detected:
             self._wake_event.set()
             self._extend_live_deadline()
             self._set_camera_awake(True)

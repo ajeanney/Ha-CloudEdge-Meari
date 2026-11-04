@@ -68,6 +68,14 @@ class SleepButtonTests(unittest.TestCase):
         coord._note_motion("pir")
         self.assertTrue(coord._wake_event.is_set())
 
+    def test_turning_wake_on_motion_on_clears_the_hold(self):
+        coord = make_coordinator()
+        coord.sleep_camera()
+        coord._note_motion("pir")
+        coord.set_motion_wake_enabled(True)
+        self.assertTrue(coord._wake_event.is_set())
+        self.assertGreater(coord._live_deadline, time.monotonic())
+
     def test_motion_wakes_when_never_put_to_sleep(self):
         coord = make_coordinator()
         coord._note_motion("pir")
