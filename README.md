@@ -239,6 +239,8 @@ MPEG-TS server is advertised:
   Frigate / go2rtc runs in the **same Docker network** as HA and resolves
   containers by name.
 
+The choice is saved and survives a restart.
+
 ### Using the stream in Frigate / go2rtc
 
 The MPEG-TS server is internal to Home Assistant — it isn't a hardcoded

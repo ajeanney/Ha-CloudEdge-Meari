@@ -16,6 +16,7 @@ from ..const import (
     IOT_CODE_LAMP,
     IOT_CODE_VIDEO_ENCRYPTION,
     PTZ_DIRECTIONS,
+    STREAM_HOST_MODES,
 )
 from ..p2p_streamer import (
     lens_sources,
@@ -214,7 +215,7 @@ class CoordinatorStateMixin:
         self._fire_update()
 
     def set_stream_host_mode(self, mode: str) -> None:
-        if mode not in {"ip", "docker"}:
+        if mode not in STREAM_HOST_MODES:
             return
         self._stream_host_mode = mode
         self._fire_update()
