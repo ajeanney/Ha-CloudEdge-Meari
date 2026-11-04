@@ -49,7 +49,7 @@ derived from the camera's IoT model:
 |------|------|------------|
 | `camera.py` | Live + idle MPEG-TS stream. | — |
 | `binary_sensor.py` | Motion / Awake / Charging. | — |
-| `button.py` | Wake Camera. | — |
+| `button.py` | Wake Camera, Sleep Camera. | — |
 | `sensor.py` | Battery + Charge Status. | Temperature, Humidity, WiFi Signal. |
 | `number.py` | Motion Timeout. | Sensitivities, intervals, brightness, volume… |
 | `select.py` | Stream Host Mode, Stream Quality, Lens (dual-lens cameras). | Day/Night, SD record, anti-flicker… |

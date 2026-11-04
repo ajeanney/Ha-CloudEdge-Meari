@@ -326,11 +326,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
                 next_grab_retry = time.monotonic() + idle_retry_s
 
             self._consume_wake_event()
-            if self._motion_detected and self._motion_wake_enabled:
-                self._live_deadline = max(
-                    self._live_deadline,
-                    self._last_motion_time + float(self._motion_timeout),
-                )
+            self._track_motion(now)
 
             if now < self._live_deadline:
                 self._run_live_until_deadline()

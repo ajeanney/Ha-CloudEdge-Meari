@@ -1,6 +1,7 @@
 """End-to-end check: cloudplus inside a real HA, consumed by a real Frigate.
 
-Runs the scenario sleep -> wake -> live -> sleep (repeated) and fails if
+Runs the scenario sleep -> wake -> live -> sleep (repeated), then ends one live
+session early with the Sleep button, and fails if
 Frigate ever sees the camera offline (``camera_fps == 0``), restarts its
 ffmpeg, or logs one of its stream watchdog lines. See docs/e2e.md.
 
@@ -116,6 +117,7 @@ class Run:  # pylint: disable=too-many-instance-attributes
     token: str = ""
     camera: str = ""
     wake_button: str = ""
+    sleep_button: str = ""
     motion_timeout: str = ""
     samples: list[Sample] = field(default_factory=list)
     started: float = 0.0
@@ -298,12 +300,13 @@ async def setup_ha(run: Run, ha: Ha) -> None:
         for ent in await ha.ws("config/entity_registry/list"):
             if ent["platform"] != "cloudplus" or run.args.device not in ent["unique_id"]:
                 continue
-            for suffix in ("_camera", "_wake", "_motion_timeout"):
+            for suffix in ("_camera", "_wake", "_sleep", "_motion_timeout"):
                 if ent["unique_id"].endswith(suffix) and ent["disabled_by"] is None:
                     found.setdefault(suffix, ent["entity_id"])
-        return found if len(found) == 3 else None
+        return found if len(found) == 4 else None
     found = await wait_for("cloudplus entities", entities, 180)
     run.camera, run.wake_button = found["_camera"], found["_wake"]
+    run.sleep_button = found["_sleep"]
     run.motion_timeout = found["_motion_timeout"]
     log(f"Camera {run.camera}, wake {run.wake_button}")
 
@@ -382,6 +385,13 @@ async def _scenario_phases(run: Run, ha: Ha, session: aiohttp.ClientSession) -> 
         await observe(run, ha, session, f"awake{cycle}", until=_back_asleep(),
                       timeout=live_s + args.sim_wake_delay + 240)
         await observe(run, ha, session, f"sleep{cycle}", args.sleep_s)
+    # Sleep Camera ends a live session before its motion timeout.
+    await ha.service("button", "press", entity_id=run.wake_button)
+    await observe(run, ha, session, "awakeS", args.sim_wake_delay + 40)
+    await ha.service("button", "press", entity_id=run.sleep_button)
+    await observe(run, ha, session, "sleepS", until=lambda s: s.ha_state == "idle",
+                  timeout=30)
+    await observe(run, ha, session, "sleepS", args.sleep_s)
 
 
 def report(run: Run, frigate_log: str, completed: bool) -> bool:

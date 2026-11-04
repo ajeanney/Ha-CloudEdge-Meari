@@ -65,7 +65,8 @@
       "charging": { "name": "Charging" }
     },
     "button": {
-      "wake": { "name": "Wake Camera" }
+      "wake": { "name": "Wake Camera" },
+      "sleep": { "name": "Sleep Camera" }
     },
     "camera": {
       "camera": { "name": "Camera" }

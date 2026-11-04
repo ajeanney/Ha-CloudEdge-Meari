@@ -146,6 +146,7 @@ discovered from the camera's IoT model values.
 | Battery             | `sensor`        | Charge percentage (battery cameras). |
 | Charge Status       | `sensor`        | Discharging / Charging / Full text status. |
 | Wake Camera         | `button`        | Manually wake the camera. |
+| Sleep Camera        | `button`        | End the live session now. Motion keeps updating the Motion sensor but does not wake the camera again until Wake Camera is pressed or Wake on Motion is turned on. |
 | Wake on Motion      | `switch`        | Toggle auto-wake when a motion event fires. |
 | Motion Timeout      | `number`        | How long the camera stays awake after motion (10–600 s). |
 | Stream Host Mode    | `select`        | `IP Address` (default) or `Docker Hostname` for the stream URL — see [Streaming notes](#streaming-notes). |
