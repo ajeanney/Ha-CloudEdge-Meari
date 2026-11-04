@@ -38,6 +38,10 @@ IOT_READ_WARN_AFTER = 3
 class CoordinatorStateMixin:
     """Mixin exposing availability and IoT-derived state to HA entities."""
 
+    # Set by the Sleep button, cleared by Wake: motion still updates the sensor
+    # but does not wake the camera again.
+    _sleep_hold = False
+
     _latest_image_source: str
     _latest_image_generation: int = 0
     _latest_image_updated_at: float
@@ -190,7 +194,7 @@ class CoordinatorStateMixin:
 
     def set_motion_wake_enabled(self, enabled: bool) -> None:
         self._motion_wake_enabled = bool(enabled)
-        if self._motion_wake_enabled and self._motion_detected:
+        if self._motion_wake_enabled and self._motion_detected and not self._sleep_hold:
             self._wake_event.set()
             self._extend_live_deadline()
             self._set_camera_awake(True)
@@ -256,9 +260,22 @@ class CoordinatorStateMixin:
         return bool(api and api.ptz_stop(self._sn_num))
 
     def wake_camera(self) -> None:
+        self._sleep_hold = False
         self._wake_event.set()
         self._extend_live_deadline()
         self._set_camera_awake(True)
+
+    def sleep_camera(self) -> None:
+        """End the live session now and keep the camera asleep until Wake.
+
+        The snap loop sees the passed deadline, stops the streamer and marks
+        the camera asleep. A busy scene reports motion every few seconds,
+        so motion wake-ups are held off until the next Wake press.
+        """
+        self._sleep_hold = True
+        self._wake_event.clear()
+        self._last_motion_time = 0.0
+        self._live_deadline = 0.0
 
     def register_motion_callback(self, cb: Callable[[], None]) -> Callable[[], None]:
         self._motion_callbacks.append(cb)
@@ -333,7 +350,7 @@ class CoordinatorStateMixin:
             self._fire_update()
         self._last_motion_time = time.monotonic()
         self._set_motion(True, motion_type)
-        if self._is_snap and self._motion_wake_enabled:
+        if self._is_snap and self._motion_wake_enabled and not self._sleep_hold:
             self._wake_event.set()
             self._extend_live_deadline()
             self._set_camera_awake(True)
