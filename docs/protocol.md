@@ -228,6 +228,17 @@ ordering, source-idle recovery, wake retries) see [streaming.md](streaming.md).
   encrypted payload has no visible Annex-B prefix. Compact audio follows the
   detected video encryption mode, or the encrypted default until video is
   known.
+- **Dual-lens cameras** (two `msc` entries in the capability, e.g. `v_id` 4
+  with `ptz2: 1` and `v_id` 3 with `ptz2: 0`) stream **both lenses
+  interleaved** on one VVP session, each with its own keyframes (about every
+  4 s) and identical SPS/PPS. The lens is the high nibble of header byte
+  `0x16` (I-frame) or `0x0e` (P-frame), four bytes after the sequence field:
+  `0x40` = `v_id` 4, `0x30` = `v_id` 3 (firmware B415B). Both bytes sit in the
+  clear part of the header. Passing both lenses to one muxer makes the picture
+  flicker between views, so the engine keeps only the selected lens
+  (`frame_lens()` / `keep_lens_frame()` in `quality.py`); switching lens is a
+  filter change that
+  waits for the new lens's next I-frame, with no reconnect.
 - Video may be H.264 or HEVC. **Detection comes from Annex-B payloads**, not
   from profile names alone.
 - Some streams mix encrypted and plain frames. Parse validation must choose

@@ -150,6 +150,7 @@ discovered from the camera's IoT model values.
 | Motion Timeout      | `number`        | How long the camera stays awake after motion (10–600 s). |
 | Stream Host Mode    | `select`        | `IP Address` (default) or `Docker Hostname` for the stream URL — see [Streaming notes](#streaming-notes). |
 | Stream Quality      | `select`        | `AUTO`, `SD`, `HD`, `QHD`, … — advertised profiles, or the native HD/SD fallback for legacy cameras. |
+| Lens                | `select`        | Dual-lens cameras only: which lens the stream shows (e.g. `Pan-tilt (source 4)` / `Fixed (source 3)`). Switching takes effect on the next keyframe, without reconnecting. |
 
 ### IoT entities (model-dependent)
 

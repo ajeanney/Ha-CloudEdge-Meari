@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_STREAM_QUALITY, DOMAIN
+from .const import CONF_LENS, CONF_STREAM_QUALITY, DOMAIN
 from .coordinator import CloudEdgeMeariCoordinator
 from .entity import CloudEdgeMeariEntity, CloudEdgeMeariIotEntity
 from .meari_commands import (
@@ -163,6 +163,8 @@ async def async_setup_entry(
     """Set up CloudEdge / Meari select entities from a config entry."""
     coord: CloudEdgeMeariCoordinator = hass.data[DOMAIN][entry.entry_id]
     entities: list[SelectEntity] = [CloudEdgeMeariStreamHostSelect(coord, entry)]
+    if coord.lens_sources:
+        entities.append(CloudEdgeMeariLensSelect(coord, entry))
     if coord.quality_profiles:
         entities.append(CloudEdgeMeariStreamQualitySelect(coord, entry))
     for spec in IOT_SELECTS:
@@ -283,4 +285,45 @@ class CloudEdgeMeariStreamQualitySelect(CloudEdgeMeariEntity, SelectEntity):
         options = dict(self._entry.options)
         options[CONF_STREAM_QUALITY] = _AUTO_LABEL if quality_id is None else quality_id
         self.hass.config_entries.async_update_entry(self._entry, options=options)
+        self.async_write_ha_state()
+
+
+# ---------------------------------------------------------------------------
+# Lens selector (dual-lens cameras)
+# ---------------------------------------------------------------------------
+
+
+class CloudEdgeMeariLensSelect(CloudEdgeMeariEntity, SelectEntity):
+    """Select which lens of a dual-lens camera the stream shows.
+
+    Both lenses arrive interleaved on one session; without a choice the
+    stream mixes them and the picture flickers between the two views.
+    """
+
+    _attr_name = "Lens"
+    _attr_icon = "mdi:camera-switch"
+
+    def __init__(
+        self, coordinator: CloudEdgeMeariCoordinator, entry: ConfigEntry
+    ) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{coordinator.device_uuid}_lens"
+        self._label_to_id = {
+            label: v_id for v_id, label in coordinator.lens_sources.items()
+        }
+        self._attr_options = list(self._label_to_id)
+
+    @property
+    def current_option(self) -> str | None:
+        return self._coordinator.lens_sources.get(self._coordinator.lens_v_id)
+
+    async def async_select_option(self, option: str) -> None:
+        """Switch lens and remember the choice."""
+        if option not in self._label_to_id:
+            return
+        v_id = self._label_to_id[option]
+        options = dict(self._entry.options)
+        options[CONF_LENS] = v_id
+        self.hass.config_entries.async_update_entry(self._entry, options=options)
+        self._coordinator.set_lens(v_id)
         self.async_write_ha_state()

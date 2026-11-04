@@ -14,6 +14,7 @@ CONF_HOST_KEY = "host_key"
 CONF_MOTION_TIMEOUT = "motion_timeout"
 CONF_VIDEO_PASSWORD = "video_password"
 CONF_STREAM_QUALITY = "stream_quality"
+CONF_LENS = "lens"
 
 DEFAULT_MOTION_TIMEOUT = 120
 DEFAULT_COUNTRY_CODE = "FR"

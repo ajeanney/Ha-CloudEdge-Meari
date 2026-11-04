@@ -62,6 +62,54 @@ def _decode_json(raw: Any, fallback: Any) -> Any:
     return raw if raw not in (None, "") else fallback
 
 
+def lens_sources(device: dict[str, Any]) -> dict[int, str]:
+    """Return ``{v_id: label}`` for dual-lens cameras, else ``{}``.
+
+    Dual-lens cameras list one ``msc`` entry per lens, e.g.
+    ``[{"v_id":4,"ptz2":1,...},{"v_id":3,"ptz2":0,...}]``, and stream both
+    lenses at once on the same VVP session (see ``frame_lens``).
+    """
+    try:
+        msc = _decode_json(_caps(device).get("msc"), [])
+        entries = [entry for entry in msc if isinstance(entry, dict) and "v_id" in entry]
+        if len(entries) < 2:
+            return {}
+        return {
+            int(entry["v_id"]): ("Pan-tilt" if int(entry.get("ptz2", 0) or 0) else "Fixed")
+            + f" (source {int(entry['v_id'])})"
+            for entry in entries
+        }
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return {}
+
+
+def frame_lens(chunk: bytes) -> int | None:
+    """Return the ``msc`` v_id a raw VVP video frame came from, else None.
+
+    The lens is the high nibble of header byte ``0x16`` (I-frame) or ``0x0e``
+    (P-frame), 4 bytes after the sequence field (0x40 = v_id 4, 0x30 = v_id 3
+    on firmware B415B). Both offsets are in the clear part of the header.
+    """
+    offset = {0xFC: 0x16, 0xFD: 0x0E}.get(chunk[3] if len(chunk) > 3 else -1)
+    if offset is None or len(chunk) <= offset:
+        return None
+    return chunk[offset] >> 4
+
+
+def keep_lens_frame(chunk: bytes, lens_v_id: int, waiting: bool) -> tuple[bool, bool]:
+    """Filter one raw frame for the chosen lens; return ``(keep, still_waiting)``.
+
+    Frames of the other lens are dropped. After a lens switch (``waiting``),
+    the chosen lens's video is held back until its next I-frame.
+    """
+    lens = frame_lens(chunk)
+    if lens is None:
+        return True, waiting
+    if lens != lens_v_id or (waiting and chunk[3] != 0xFC):
+        return False, waiting
+    return True, False
+
+
 def _bps2_profiles(device: dict[str, Any]) -> dict[int, str]:
     """Return modern profiles from direct bps2 or the native msc fallback."""
     try:
