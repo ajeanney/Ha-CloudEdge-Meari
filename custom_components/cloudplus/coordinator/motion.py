@@ -225,8 +225,6 @@ class MotionEventListener:
 
         client.username_pw_set(self._api.access_id, self._api.mqtt_signature)
         ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
         client.tls_set_context(ssl_ctx)
         client.on_connect = on_connect
         client.on_disconnect = on_disconnect

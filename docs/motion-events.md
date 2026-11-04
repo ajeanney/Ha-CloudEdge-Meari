@@ -13,6 +13,10 @@ payload shapes to expect.
 - Official apps subscribe to Meari IoT events through **MQTT over TLS**
   using the host/port and `mqttSignature` returned by the platform config
   API.
+- The broker certificate is **verified** (system CAs and hostname): the
+  connection carries the account's `access_id` and `mqttSignature`, so an
+  unverified session would hand them to anyone able to intercept it. The US
+  broker (`events-*.mearicloud.com`, port 1883 with TLS 1.2) verifies cleanly.
 - MQTT parameters as used by the apps and this integration:
   - **Client id** = numeric user id
   - **Username** = platform access id

@@ -49,6 +49,11 @@ class MqttReconnectTests(unittest.TestCase):
         with patch.object(MOTION.mqtt, "Client", return_value=self.client):
             self.listener.start()
 
+    def test_tls_verifies_the_broker(self):
+        (ctx,), _ = self.client.tls_set_context.call_args
+        self.assertEqual(ctx.verify_mode, MOTION.ssl.CERT_REQUIRED)
+        self.assertTrue(ctx.check_hostname)
+
     def test_keepalive(self):
         args, kwargs = self.client.connect_async.call_args
         self.assertEqual(args[:2], ("mqtt.example.invalid", 8883))
