@@ -98,12 +98,22 @@ class StreamerLensFilterTests(unittest.TestCase):
         self.streamer.lens_v_id = 4
         self.assertEqual(self.feed([I4, I3, P4, P3, AUDIO, P4]), ["I4", "P4", "audio", "P4"])
 
-    def test_switch_waits_for_the_new_lens_keyframe(self):
+    def test_switch_keeps_the_current_lens_until_the_new_lens_keyframe(self):
         self.streamer.lens_v_id = 4
         self.feed([I4, P4])
         self.streamer.switch_lens(3)
-        self.assertEqual(self.feed([P4, P3, AUDIO, I4, I3, P3]), ["audio", "I3", "P3"])
+        self.assertEqual(
+            self.feed([P4, P3, AUDIO, I4, I3, P3, P4]),
+            ["P4", "audio", "I4", "I3", "P3"],
+        )
         self.assertEqual(self.feed([P3, P4, I3]), ["P3", "I3"])
+
+    def test_dropped_lens_is_not_parsed(self):
+        self.streamer.lens_v_id = 4
+        parsed: list[bytes] = []
+        self.streamer._parse_stream_chunk = lambda chunk: parsed.append(chunk) or chunk
+        self.feed([I4, I3, P3, P4])
+        self.assertEqual(parsed, [I4, P4])
 
 
 if __name__ == "__main__":

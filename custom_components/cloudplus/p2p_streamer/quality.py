@@ -96,18 +96,20 @@ def frame_lens(chunk: bytes) -> int | None:
     return chunk[offset] >> 4
 
 
-def keep_lens_frame(chunk: bytes, lens_v_id: int, waiting: bool) -> tuple[bool, bool]:
-    """Filter one raw frame for the chosen lens; return ``(keep, still_waiting)``.
+def keep_lens_frame(
+    chunk: bytes, lens_v_id: int, next_lens_v_id: int | None
+) -> tuple[bool, int]:
+    """Filter one raw frame for the chosen lens; return ``(keep, lens_v_id)``.
 
-    Frames of the other lens are dropped. After a lens switch (``waiting``),
-    the chosen lens's video is held back until its next I-frame.
+    Frames of the other lens are dropped. A pending switch (``next_lens_v_id``)
+    takes effect on that lens's next I-frame, so video never stops meanwhile.
     """
     lens = frame_lens(chunk)
     if lens is None:
-        return True, waiting
-    if lens != lens_v_id or (waiting and chunk[3] != 0xFC):
-        return False, waiting
-    return True, False
+        return True, lens_v_id
+    if lens == next_lens_v_id and chunk[3] == 0xFC:
+        lens_v_id = lens
+    return lens == lens_v_id, lens_v_id
 
 
 def _bps2_profiles(device: dict[str, Any]) -> dict[int, str]:

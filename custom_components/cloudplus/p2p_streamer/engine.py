@@ -86,7 +86,7 @@ class P2PStreamer(LiveSessionMixin):
     """Run a Meari stream over its advertised WebRTC or legacy PPCS path."""
 
     lens_v_id: int | None = None  # dual-lens cameras: msc v_id to keep
-    _lens_wait_keyframe = False
+    _next_lens_v_id: int | None = None
 
     def __init__(
         self,
@@ -318,8 +318,8 @@ class P2PStreamer(LiveSessionMixin):
         return parse_stream_frame(chunk)
 
     def switch_lens(self, v_id: int) -> None:
-        """Show another lens; video resumes on its next keyframe (no reconnect)."""
-        self.lens_v_id, self._lens_wait_keyframe = v_id, True
+        """Show another lens from its next I-frame on (no reconnect)."""
+        self._next_lens_v_id = v_id
 
     def _handle_stream_payload(
         self, payload: bytes, *, wait_for_keyframe: bool = False
@@ -328,13 +328,15 @@ class P2PStreamer(LiveSessionMixin):
         for chunk in split_stream_frames(payload):
             if len(chunk) < 4 or chunk[0:3] != b"\x00\x00\x01":
                 continue
+            if self.lens_v_id is not None:
+                keep, self.lens_v_id = keep_lens_frame(
+                    chunk, self.lens_v_id, self._next_lens_v_id
+                )
+                if not keep:
+                    continue
             parsed = self._parse_stream_chunk(chunk)
             if not parsed:
                 continue
-            if self.lens_v_id is not None:
-                keep, self._lens_wait_keyframe = keep_lens_frame(chunk, self.lens_v_id, self._lens_wait_keyframe)
-                if not keep:
-                    continue
             saw_keyframe = (
                 self._handle_parsed_frame(
                     parsed,
