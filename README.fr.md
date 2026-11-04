@@ -249,7 +249,7 @@ L'entité sélecteur `Stream Host Mode` contrôle la façon dont l'URL publique 
 serveur MPEG-TS est annoncée :
 
 - `IP Address` — utilise l'IP locale de l'hôte HA (par ex.
-  `tcp://192.168.1.10:36059`). Idéal pour HAOS / HA Container avec réseau
+  `http://192.168.1.10:36059/stream.ts?token=…`). Idéal pour HAOS / HA Container avec réseau
   hôte, ou tout ce qui joint HA directement par IP.
 - `Docker Hostname` — utilise plutôt le nom d'hôte du conteneur. À choisir si
   Frigate / go2rtc tourne dans le **même réseau Docker** que HA et résout les
@@ -275,7 +275,11 @@ Authorization: Bearer <long-lived-access-token>
 ```
 
 Le corps de la réponse est l'URL du flux courante (par ex.
-`tcp://192.168.1.10:36059`). go2rtc peut appeler ce point d'entrée à chaque
+`http://192.168.1.10:36059/stream.ts?token=…`). Le port et le jeton changent à
+chaque redémarrage, et le serveur de flux refuse toute requête sans le jeton
+courant : les autres appareils de votre réseau ne peuvent pas regarder la
+caméra. Le TCP brut (`tcp://127.0.0.1:<port>`, sans jeton) n'est servi qu'à
+l'hôte HA lui-même. go2rtc peut appeler ce point d'entrée à chaque
 ouverture de flux grâce à sa source `echo:`, qui utilise la sortie standard
 d'une commande arbitraire comme URL :
 

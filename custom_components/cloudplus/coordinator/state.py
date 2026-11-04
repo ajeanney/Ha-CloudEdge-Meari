@@ -157,6 +157,11 @@ class CoordinatorStateMixin:
         return self._stream_server.port
 
     @property
+    def stream_token(self) -> str:
+        """Secret every ``stream_source`` URL carries; never log it."""
+        return self._stream_server.token
+
+    @property
     def stream_host_mode(self) -> str:
         return self._stream_host_mode
 

@@ -232,7 +232,7 @@ cameras so they use the same wake/idle-stream lifecycle.
 The `Stream Host Mode` select entity controls how the public URL of the
 MPEG-TS server is advertised:
 
-- `IP Address` — uses the HA host's LAN IP (e.g. `http://192.168.1.10:36059/stream.ts`).
+- `IP Address` — uses the HA host's LAN IP (e.g. `http://192.168.1.10:36059/stream.ts?token=…`).
   Best for HAOS / HA Container with host networking, or anything that
   reaches HA directly by IP.
 - `Docker Hostname` — uses the container's hostname instead. Pick this if
@@ -259,10 +259,12 @@ Authorization: Bearer <long-lived-access-token>
 ```
 
 The response body is the current stream URL (e.g.
-`http://192.168.1.10:36059/stream.ts`; the same port also serves raw TCP,
-so `tcp://192.168.1.10:36059` keeps working). go2rtc can call that endpoint on every stream
-open via its `echo:` source type, which uses the stdout of an arbitrary
-command as the URL:
+`http://192.168.1.10:36059/stream.ts?token=…`). The port and the token change
+on every restart, and the stream server refuses any request without the
+current token, so other devices on your network can't watch the camera. Raw
+TCP (`tcp://127.0.0.1:<port>`, no token) is only served to the HA host itself.
+go2rtc can call that endpoint on every stream open via its `echo:` source type,
+which uses the stdout of an arbitrary command as the URL:
 
 1. **Install** `hass-expose-camera-stream-source` (HACS, integration). No
    YAML / configuration entry needed — it just enables the endpoint.
