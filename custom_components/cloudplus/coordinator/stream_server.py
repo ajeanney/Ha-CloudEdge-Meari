@@ -1,18 +1,24 @@
-"""Small MPEG-TS stream server: raw TCP or a plain HTTP GET on one port.
+"""Small MPEG-TS stream server: a plain HTTP GET, or raw TCP from loopback.
 
-Raw TCP clients (``tcp://host:port``, e.g. Frigate) send nothing and just
-read. HTTP clients (``http://host:port/stream.ts``) get a 200 header first.
-HA uses the HTTP form: go2rtc only reports a ``url`` for HTTP producers, and
-HA's go2rtc client fails every WebRTC offer while a producer has none.
+HTTP clients (``http://host:port/stream.ts?token=...``) get a 200 header
+first. The token is random per server, so only consumers that read
+``stream_source`` (HA, go2rtc, Frigate through HA's API) can watch. HA uses
+the HTTP form: go2rtc only reports a ``url`` for HTTP producers, and HA's
+go2rtc client fails every WebRTC offer while a producer has none. Raw TCP
+readers (``tcp://127.0.0.1:port``) send nothing, so they can't carry the
+token and are only served from loopback.
 """
 
 from __future__ import annotations
 
 import collections
+import ipaddress
 import logging
+import secrets
 import socket
 import threading
 import time
+from urllib.parse import parse_qs
 from dataclasses import dataclass
 from typing import Callable, Deque
 
@@ -38,14 +44,17 @@ HTTP_RESPONSE_HEADER = (
 HTTP_NOT_FOUND = (
     b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
 )
+HTTP_FORBIDDEN = (
+    b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+)
 
 
-def _http_handshake(client: socket.socket) -> bool:
+def _http_handshake(client: socket.socket, token: str, allow_raw: bool) -> bool:
     """Answer an HTTP GET for the stream; return False to drop the client.
 
     No request within ``HTTP_SNIFF_S`` means a raw TCP reader: nothing is
-    consumed or sent. A request for another path, or HEAD, is answered and
-    dropped.
+    consumed or sent, and it is kept only if ``allow_raw``. A request for
+    another path, without the token, or HEAD, is answered and dropped.
     """
     # Socket timeouts, not select(): select() rejects fds >= 1024, which a
     # busy HA process reaches.
@@ -54,7 +63,7 @@ def _http_handshake(client: socket.socket) -> bool:
         try:
             client.recv(1, socket.MSG_PEEK)
         except TimeoutError:
-            return True
+            return allow_raw
         request = b""
         deadline = time.monotonic() + HTTP_REQUEST_TIMEOUT_S
         while b"\r\n\r\n" not in request:
@@ -69,11 +78,15 @@ def _http_handshake(client: socket.socket) -> bool:
             if not request.startswith(b"GET "[: len(request)]) and not (
                 request.startswith(b"HEAD"[: len(request)])
             ):
-                return True  # stray bytes from a raw reader; ignore them
+                return allow_raw  # stray bytes from a raw reader; ignore them
         method, _, rest = request.partition(b" ")
-        path = rest.split(b" ", 1)[0].split(b"?", 1)[0]
-        if path not in (b"/", HTTP_STREAM_PATH.encode()):
+        path, _, query = rest.split(b" ", 1)[0].partition(b"?")
+        if path != HTTP_STREAM_PATH.encode():
             client.sendall(HTTP_NOT_FOUND)
+            return False
+        supplied = parse_qs(query).get(b"token", [b""])[0]
+        if not secrets.compare_digest(supplied, token.encode()):
+            client.sendall(HTTP_FORBIDDEN)
             return False
         client.sendall(HTTP_RESPONSE_HEADER)
         return method == b"GET"
@@ -94,7 +107,13 @@ class _Client:
 class StreamServer:
     """Local TCP server that fans the muxed MPEG-TS stream out to clients."""
 
-    def __init__(self, on_missing_bootstrap: Callable[[], bool] | None = None) -> None:
+    def __init__(
+        self,
+        on_missing_bootstrap: Callable[[], bool] | None = None,
+        host: str = "0.0.0.0",
+    ) -> None:
+        # Address the next start() binds; "127.0.0.1" keeps the LAN out.
+        self.host = host
         self._sock: socket.socket | None = None
         self._port = 0
         self._running = False
@@ -104,6 +123,8 @@ class StreamServer:
         self._accept_thread: threading.Thread | None = None
         self._bootstrap = StreamBootstrap()
         self._on_missing_bootstrap = on_missing_bootstrap
+        # Per server, so every restart revokes old URLs; consumers re-read it.
+        self.token = secrets.token_urlsafe(16)
 
     @property
     def port(self) -> int:
@@ -134,7 +155,7 @@ class StreamServer:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                sock.bind(("0.0.0.0", 0))
+                sock.bind((self.host, 0))
                 sock.listen(8)
                 sock.settimeout(1.0)
             except OSError:
@@ -166,6 +187,8 @@ class StreamServer:
             accept_thread = self._accept_thread
             self._sock = None
             self._accept_thread = None
+            # Under the lock: a concurrent start() must not see its port zeroed.
+            self._port = 0
         if sock is not None:
             try:
                 sock.close()
@@ -182,7 +205,6 @@ class StreamServer:
                     pass
             self._clients.clear()
             self._bootstrap.reset()
-        self._port = 0
 
     def bootstrap_snapshot(self) -> bytes:
         with self._lock:
@@ -239,7 +261,11 @@ class StreamServer:
             ).start()
 
     def _serve_client(self, client: socket.socket) -> None:
-        if not _http_handshake(client) or not self._running:
+        try:
+            allow_raw = ipaddress.ip_address(client.getpeername()[0]).is_loopback
+        except (OSError, ValueError):
+            allow_raw = False
+        if not _http_handshake(client, self.token, allow_raw) or not self._running:
             try:
                 client.close()
             except OSError:

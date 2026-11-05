@@ -13,12 +13,14 @@ from homeassistant.core import HomeAssistant
 
 from ..api import MeariApiClient
 from ..const import (
+    CONF_STREAM_HOST_MODE,
     CONF_STREAM_QUALITY,
     DEFAULT_APP_PROFILE,
     DEFAULT_COUNTRY_CODE,
     DEFAULT_MOTION_TIMEOUT,
     DEFAULT_PHONE_CODE,
     DOMAIN,
+    STREAM_HOST_MODES,
 )
 from ..p2p_streamer import (
     ADAPTIVE_STREAM_ID,
@@ -133,7 +135,8 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         self._last_motion_time = 0.0
         self._motion_wake_enabled = True
         self._motion_timeout = DEFAULT_MOTION_TIMEOUT
-        self._stream_host_mode = "ip"
+        host_mode = entry.options.get(CONF_STREAM_HOST_MODE) if entry else None
+        self._stream_host_mode = host_mode if host_mode in STREAM_HOST_MODES else "ip"
         self._initial_frame_grab = bool(initial_frame_grab)
         self._initial_grab_timeout = max(30.0, float(initial_grab_timeout))
 
@@ -161,7 +164,9 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         self._idle_stream_reset = threading.Event()
         self._stream_restart = threading.Event()
 
-        self._stream_server = StreamServer(self._request_stream_bootstrap)
+        self._stream_server = StreamServer(
+            self._request_stream_bootstrap, self._stream_bind_host
+        )
         self._muxer = FfmpegMuxer(self._stream_server.broadcast)
 
         self._video_codec = CodecName.HEVC

@@ -74,13 +74,14 @@ class CloudEdgeMeariCamera(CloudEdgeMeariEntity, Camera):
 
         HTTP, not ``tcp://``: go2rtc reports no ``url`` for a raw TCP
         producer, and HA's go2rtc client then fails every WebRTC offer while
-        that producer runs. The same port still serves raw TCP (Frigate).
+        that producer runs. The token keeps other LAN hosts out.
         """
         port = self._coordinator.stream_port
         if not port:
             return None
         host = self._coordinator.stream_host
-        return f"http://{host}:{port}{HTTP_STREAM_PATH}"
+        token = self._coordinator.stream_token
+        return f"http://{host}:{port}{HTTP_STREAM_PATH}?token={token}"
 
     @property
     def motion_detection_enabled(self) -> bool:
