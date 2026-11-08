@@ -17,6 +17,9 @@ CONF_STREAM_QUALITY = "stream_quality"
 CONF_LENS = "lens"
 CONF_STREAM_HOST_MODE = "stream_host_mode"
 STREAM_HOST_MODES = ("ip", "docker", "local")
+CONF_CHARGING_MODE = "charging_mode"
+# IoT codes Charging Mode turned off, turned back on when it ends.
+CONF_CHARGING_RESTORE = "charging_mode_restore"
 
 DEFAULT_MOTION_TIMEOUT = 120
 DEFAULT_COUNTRY_CODE = "FR"

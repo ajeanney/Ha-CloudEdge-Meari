@@ -7,6 +7,7 @@ import logging
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -43,6 +44,10 @@ class CloudEdgeMeariWakeButton(CloudEdgeMeariEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Wake the camera."""
+        if self._coordinator.charging_mode:
+            raise ServiceValidationError(
+                f"{self._coordinator.device_name} is in Charging Mode; turn it off to wake the camera"
+            )
         _LOGGER.info("Wake button pressed for %s", self._coordinator.device_name)
         self._coordinator.wake_camera()
 

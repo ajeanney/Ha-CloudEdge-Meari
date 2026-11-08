@@ -79,7 +79,8 @@
       "battery_reported": { "name": "Battery Reported" }
     },
     "switch": {
-      "motion_wake": { "name": "Wake on Motion" }
+      "motion_wake": { "name": "Wake on Motion" },
+      "charging_mode": { "name": "Charging Mode" }
     }
   }
 }

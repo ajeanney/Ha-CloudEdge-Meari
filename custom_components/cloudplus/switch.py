@@ -1,7 +1,8 @@
-"""Switch platform for CloudEdge / Meari — wake on motion toggle."""
+"""Switch platform for CloudEdge / Meari — wake on motion and charging mode toggles."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,8 +13,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import CONF_CHARGING_MODE, CONF_CHARGING_RESTORE, DOMAIN
 from .coordinator import CloudEdgeMeariCoordinator
+from .coordinator.state import CHARGING_OFF_ONLY, CHARGING_OFF_SETTINGS
 from .entity import CloudEdgeMeariEntity, CloudEdgeMeariIotEntity
 from .meari_commands import (
     ABNORMAL_NOISE_ENABLE,
@@ -140,6 +142,7 @@ async def async_setup_entry(
     entities: list[SwitchEntity] = []
     if coord.is_battery_camera:
         entities.append(CloudEdgeMeariMotionWakeSwitch(coord, entry))
+        entities.append(CloudEdgeMeariChargingModeSwitch(coord, entry))
     if coord.has_lamp:
         entities.append(CloudEdgeMeariLampSwitch(coord, entry))
     else:
@@ -255,6 +258,92 @@ class CloudEdgeMeariMotionWakeSwitch(CloudEdgeMeariEntity, SwitchEntity):
         """Disable wake on motion."""
         self._coordinator.set_motion_wake_enabled(False)
         self.async_write_ha_state()
+
+
+class CloudEdgeMeariChargingModeSwitch(CloudEdgeMeariEntity, SwitchEntity):
+    """Switch that keeps a battery camera asleep so it can charge.
+
+    On: ends any live session, stops motion and Wake Camera from waking the
+    camera and turns off its lights, sensors, detection, recording and motion
+    linkage (``CHARGING_OFF_SETTINGS``), leaving the Wi-Fi link that carries a
+    wake-up. Off: turns back on what it turned off, except lights and toys.
+    Saved in the entry options with that list, so it survives restarts. Each
+    change ends with a short check-in (a still grab), so the camera picks the
+    settings up now.
+    """
+
+    _attr_name = "Charging Mode"
+    _attr_icon = "mdi:battery-charging"
+
+    def __init__(
+        self, coordinator: CloudEdgeMeariCoordinator, entry: ConfigEntry
+    ) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{coordinator.device_uuid}_charging_mode"
+        # One change at a time: an overlapping on/off could save the wrong list.
+        self._lock = asyncio.Lock()
+
+    @property
+    def is_on(self) -> bool:
+        return self._coordinator.charging_mode
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        codes = set(self._restore_codes())
+        names = [name for code, name in CHARGING_OFF_SETTINGS.items() if str(code) in codes]
+        names += sorted(codes - {str(code) for code in CHARGING_OFF_SETTINGS})  # saved by another version
+        if self.is_on:
+            return {"will_restore": names}
+        return {"restore_failed": names} if names else {}
+
+    async def async_turn_on(self, **_kwargs: Any) -> None:
+        """Hold off wake-ups, end the live session, turn off what spends battery.
+
+        Also when already on: anything turned back on meanwhile goes off again.
+        The list is saved before any write, so a failed write cannot lose a setting.
+        Lights and toys (``CHARGING_OFF_ONLY``) go off but are not listed to come back.
+        """
+        async with self._lock:
+            was_on = self._coordinator.charging_mode
+            now_on = self._coordinator.charging_settings_on()
+            restore = set(self._restore_codes()) | {c for c in now_on if int(c) not in CHARGING_OFF_ONLY}
+            self._save(True, sorted(restore, key=int))
+            self._coordinator.end_live_session()
+            if now_on:
+                await self.hass.async_add_executor_job(self._coordinator.charging_settings_off, now_on)
+            if now_on or not was_on:
+                self._coordinator.request_check_in()  # the camera takes the new settings now
+            self.async_write_ha_state()
+
+    async def async_turn_off(self, **_kwargs: Any) -> None:
+        """Let the camera wake again and turn back on what Charging Mode turned off.
+
+        Settings that fail to come back on stay listed, so the next cycle retries them.
+        """
+        async with self._lock:
+            was_on = self._coordinator.charging_mode
+            codes = self._restore_codes()
+            failed = []
+            if codes:
+                failed = await self.hass.async_add_executor_job(
+                    self._coordinator.charging_settings_restore, codes
+                )
+            self._save(False, failed)
+            if was_on or codes:
+                self._coordinator.request_check_in()
+            self.async_write_ha_state()
+
+    def _restore_codes(self) -> list[str]:
+        return [str(code) for code in self._entry.options.get(CONF_CHARGING_RESTORE, [])]
+
+    def _save(self, on: bool, restore: list[str]) -> None:
+        options = dict(self._entry.options)
+        options[CONF_CHARGING_MODE] = on
+        if restore:
+            options[CONF_CHARGING_RESTORE] = restore
+        else:
+            options.pop(CONF_CHARGING_RESTORE, None)
+        self.hass.config_entries.async_update_entry(self._entry, options=options)
 
 
 class CloudEdgeMeariLampSwitch(CloudEdgeMeariEntity, SwitchEntity):
