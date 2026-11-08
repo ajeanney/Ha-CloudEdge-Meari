@@ -75,7 +75,8 @@
       "motion_timeout": { "name": "Motion Timeout" }
     },
     "sensor": {
-      "battery": { "name": "Battery" }
+      "battery": { "name": "Battery" },
+      "battery_reported": { "name": "Battery Reported" }
     },
     "switch": {
       "motion_wake": { "name": "Wake on Motion" }
