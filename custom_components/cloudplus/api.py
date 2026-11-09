@@ -101,6 +101,15 @@ APP_PROFILE_CONFIG: dict[str, AppProfileConfig] = {
         encrypted_login=True,
         vvp_stream_flag=0,
     ),
+    "heimlife": AppProfileConfig(
+        "35",
+        "4.6.0",
+        "200",
+        "https://apis.meari.com.cn",
+        "35",
+        encrypted_login=True,
+        vvp_stream_flag=0,
+    ),
 }
 
 PLATFORM_REGIONS = {"eu", "us", "as", "cn"}
