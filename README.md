@@ -25,6 +25,7 @@ The account profile must match the app used to register the account:
 - ANRAN
 - Arenti
 - BoifunCam
+- HeimLife (HeimVision)
 - ieGeek
 
 These apps use the same underlying Meari platform, but the server requires

@@ -32,6 +32,7 @@ APP_PROFILE_NAMES = {
     "cloudplus": "CloudPlus / CloudHome",
     "iegeek": "ieGeek",
     "arenti": "Arenti",
+    "heimlife": "HeimLife",
 }
 APP_PROFILES = list(APP_PROFILE_NAMES)
 
