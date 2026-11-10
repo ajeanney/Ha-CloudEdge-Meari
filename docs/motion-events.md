@@ -123,8 +123,10 @@ reasons, all of which broke motion for real users:
   without dispatching. Seeding is per camera and per source, so a camera that
   registers after the others (a second config entry on the same account), or
   whose first read failed with `1023` because another entry just logged in,
-  doesn't replay its day's log. The set is cleared on day rollover and capped
-  to stay bounded.
+  doesn't replay its day's log. The set is **not** cleared on day rollover:
+  the summary rows below outlive the day, and clearing re-fired every
+  camera's last alarm at midnight. It is capped instead, dropping the oldest
+  ids first.
 
 The poller also calls:
 
@@ -216,6 +218,6 @@ These tests reuse `debug_tools.bootstrap`, load the actual parser, listener
 and coordinator methods, and mock only external services. They require no
 HA server, network calls, camera photos or account credentials. Synthetic
 protocol bytes exercise decoding and rejection, routing, per-camera seeding,
-event de-duplication, unavailable images and an in-flight still
+day rollover, event de-duplication, unavailable images and an in-flight still
 conversion.
 Live hardware and phone rendering still require an end-to-end test.

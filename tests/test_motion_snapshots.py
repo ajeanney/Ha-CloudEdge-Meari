@@ -143,6 +143,24 @@ class MotionSnapshotTests(unittest.TestCase):
         self.listener._poll_device_events()
         self.received.assert_not_called()
 
+    def test_day_rollover_does_not_refire_summary_rows(self):
+        summary = {"deviceID": "42", "imageAlertType": "1", "devLocalTime": "20261108235000"}
+        self.api.get_device_events.return_value = []
+        self.api.get_new_device_events.return_value = [summary]
+        with patch.object(MOTION.time, "strftime", return_value="20261108"):
+            self.listener._poll_device_events()
+        with patch.object(MOTION.time, "strftime", return_value="20261109"):
+            self.listener._poll_device_events()
+        self.received.assert_not_called()
+
+    def test_trim_keeps_the_newest_ids(self):
+        with patch.object(MOTION, "_SEEN_ALARM_CAP", 3):
+            for event_id in "abcde":
+                self.listener._remember_event("42", event_id)
+            self.listener._trim_seen_events()
+        self.assertEqual([k[1] for k in self.listener._seen_alarm_keys], ["c", "d", "e"])
+
+
 class SnapshotCacheTests(unittest.TestCase):
     """Check event publication order and a conversion already in progress."""
 

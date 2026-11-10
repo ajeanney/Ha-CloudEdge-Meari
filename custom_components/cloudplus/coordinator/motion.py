@@ -136,8 +136,8 @@ class MotionEventListener:
         self._lock = threading.Lock()
         self._stop_poll = threading.Event()
         self._poll_thread: threading.Thread | None = None
-        self._seen_alarm_keys: set[tuple[str, str]] = set()
-        self._poll_day: str = ""
+        # Insertion-ordered so trimming drops the oldest ids, never recent ones.
+        self._seen_alarm_keys: dict[tuple[str, str], None] = {}
         # "<source>:<device_id>" whose first successful read was recorded without
         # dispatching. Per device, so a camera registering later is seeded too.
         self._seeded_sources: set[str] = set()
@@ -326,14 +326,16 @@ class MotionEventListener:
         key = (device_id, event_id)
         if key in self._seen_alarm_keys:
             return False
-        self._seen_alarm_keys.add(key)
+        self._seen_alarm_keys[key] = None
         return True
 
     def _trim_seen_events(self) -> None:
-        if len(self._seen_alarm_keys) > _SEEN_ALARM_CAP:
-            # Keep bounded; trimming oldest is fine because only events newer
-            # than the last poll can ever be dispatched.
-            self._seen_alarm_keys = set(list(self._seen_alarm_keys)[-_SEEN_ALARM_CAP:])
+        # Never cleared on day rollover: the summary rows outlive the day and
+        # would all re-fire at midnight. Oldest ids go first; they belong to
+        # past days' logs, which are never polled again.
+        excess = len(self._seen_alarm_keys) - _SEEN_ALARM_CAP
+        for key in list(self._seen_alarm_keys)[: max(0, excess)]:
+            del self._seen_alarm_keys[key]
 
     def _was_seeded(self, source: str, device_id: str) -> bool:
         """Mark *source* seeded for *device_id*; return whether it already was.
@@ -388,12 +390,6 @@ class MotionEventListener:
     def _poll_device_events(self) -> bool:
         """Poll each registered device's event log and dispatch new motions."""
         day = time.strftime("%Y%m%d")
-        if day != self._poll_day:
-            # Day rolled over: yesterday's ids won't reappear in today's log, so
-            # drop them. New events on the fresh day still dispatch normally.
-            self._poll_day = day
-            self._seen_alarm_keys.clear()
-
         with self._lock:
             devices = {item[:2] for item in self._callbacks}
         if not devices:
