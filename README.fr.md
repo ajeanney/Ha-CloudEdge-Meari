@@ -28,6 +28,7 @@ compte :
 - ANRAN
 - Arenti
 - BoifunCam
+- HeimLife (HeimVision)
 - ieGeek
 
 Ces applications reposent sur la même plateforme Meari, mais le serveur exige
