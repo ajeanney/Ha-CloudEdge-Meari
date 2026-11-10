@@ -138,6 +138,9 @@ class MotionEventListener:
         self._poll_thread: threading.Thread | None = None
         self._seen_alarm_keys: set[tuple[str, str]] = set()
         self._poll_day: str = ""
+        # "<source>:<device_id>" whose first successful read was recorded without
+        # dispatching. Per device, so a camera registering later is seeded too.
+        self._seeded_sources: set[str] = set()
         self._mqtt_connect_warned = False
         self._mqtt_credentials_stale = threading.Event()
         self._last_credential_refresh = float("-inf")
@@ -271,18 +274,15 @@ class MotionEventListener:
             self._poll_thread = None
 
     def _alarm_poll_loop(self) -> None:
-        # The first pass seeds the "already seen" set without dispatching, so
-        # pre-existing events don't fire motion at startup. This is the primary
-        # delivery path whenever the live MQTT push is unavailable — most often
-        # because the broker requires clientId == userID, so a phone logged in
-        # to the same account keeps evicting our MQTT session.
-        seeded = False
+        # This is the primary delivery path whenever the live MQTT push is
+        # unavailable — most often because the broker requires clientId ==
+        # userID, so a phone logged in to the same account keeps evicting our
+        # MQTT session.
         while not self._stop_poll.is_set():
             self._refresh_stale_mqtt_credentials()
             try:
-                if not self._poll_device_events(dispatch=seeded):
+                if not self._poll_device_events():
                     raise RuntimeError("all motion event endpoints failed")
-                seeded = True
                 wait_s = ALARM_POLL_INTERVAL
             except (OSError, RuntimeError, ValueError, KeyError) as exc:
                 _LOGGER.debug("Alarm event poll failed: %s", exc)
@@ -335,6 +335,18 @@ class MotionEventListener:
             # than the last poll can ever be dispatched.
             self._seen_alarm_keys = set(list(self._seen_alarm_keys)[-_SEEN_ALARM_CAP:])
 
+    def _was_seeded(self, source: str, device_id: str) -> bool:
+        """Mark *source* seeded for *device_id*; return whether it already was.
+
+        A device's first successful read only records what already exists, so
+        pre-existing events don't fire motion when HA starts or a camera
+        registers later than the others.
+        """
+        key = f"{source}:{device_id}"
+        seeded = key in self._seeded_sources
+        self._seeded_sources.add(key)
+        return seeded
+
     def _event_id(self, raw_event: dict, *, prefix: str = "") -> str:
         event_id = str(
             raw_event.get("msgID")
@@ -347,15 +359,18 @@ class MotionEventListener:
             return f"{prefix}{event_id}"
         return f"{prefix}{json.dumps(raw_event, sort_keys=True, separators=(',', ':'))}"
 
-    def _poll_new_event_summary(
-        self, devices: set[tuple[str, str]], dispatch: bool
-    ) -> bool:
+    def _poll_new_event_summary(self, devices: set[tuple[str, str]]) -> bool:
         registered_ids = {device_id for device_id, _sn in devices}
         try:
             events = self._api.get_new_device_events()
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             _LOGGER.debug("New-event summary poll failed: %s", exc)
             return False
+        dispatch_ids = {
+            device_id
+            for device_id in registered_ids
+            if self._was_seeded("summary", device_id)
+        }
         for raw_event in events:
             device_id = str(
                 raw_event.get("deviceID")
@@ -366,13 +381,11 @@ class MotionEventListener:
             if not device_id or device_id not in registered_ids:
                 continue
             event_id = self._event_id(raw_event, prefix="summary:")
-            if not self._remember_event(device_id, event_id):
-                continue
-            if dispatch:
+            if self._remember_event(device_id, event_id) and device_id in dispatch_ids:
                 self._handle_payload(json.dumps(raw_event).encode())
         return True
 
-    def _poll_device_events(self, dispatch: bool) -> bool:
+    def _poll_device_events(self) -> bool:
         """Poll each registered device's event log and dispatch new motions."""
         day = time.strftime("%Y%m%d")
         if day != self._poll_day:
@@ -382,7 +395,7 @@ class MotionEventListener:
             self._seen_alarm_keys.clear()
 
         with self._lock:
-            devices = {(dev_id, sn) for dev_id, sn, *_cbs in self._callbacks}
+            devices = {item[:2] for item in self._callbacks}
         if not devices:
             return True
 
@@ -394,6 +407,7 @@ class MotionEventListener:
                 _LOGGER.debug("Event list poll failed for %s: %s", device_id, exc)
                 continue
             event_log_ok = True
+            dispatch = self._was_seeded("list", device_id)
             for raw_event in events:
                 if not isinstance(raw_event, dict):
                     continue
@@ -403,16 +417,10 @@ class MotionEventListener:
                     or raw_event.get("eventTime")
                     or ""
                 ).strip()
-                if not msg_id:
-                    continue
-                key = (str(device_id), msg_id)
-                if key in self._seen_alarm_keys:
-                    continue
-                self._seen_alarm_keys.add(key)
-                if dispatch:
+                if msg_id and self._remember_event(device_id, msg_id) and dispatch:
                     self._handle_payload(json.dumps(raw_event).encode())
 
-        summary_ok = self._poll_new_event_summary(devices, dispatch)
+        summary_ok = self._poll_new_event_summary(devices)
 
         self._trim_seen_events()
         return event_log_ok or summary_ok
@@ -444,25 +452,22 @@ class MotionEventListener:
         license_id = event["license_id"]
         if not device_id and not license_id:
             return
+        callbacks = self._matching_callbacks(device_id, license_id)
         if event["is_sound"]:
-            for _sn, _on_motion, on_sound in self._matching_callbacks(
-                device_id, license_id
-            ):
+            for _sn, _on_motion, on_sound in callbacks:
                 on_sound(str(event["evt_name"]))
             return
 
         motion_type = str(event["evt_name"])
-        raw_event = event["raw"]
-        image_url = _find_image_url(raw_event)
+        image_url = _find_image_url(event["raw"])
         encrypted_image = (
             self._api.download_snapshot(image_url) if image_url else None
         )
-        for sn_num, callback, _on_sound in self._matching_callbacks(
-            device_id, license_id
-        ):
+        for sn_num, on_motion, _on_sound in callbacks:
             event_image = (
                 _decode_event_snapshot(encrypted_image, sn_num)
                 if encrypted_image
                 else None
             )
-            callback(motion_type, event_image)
+            on_motion(motion_type, event_image)
+

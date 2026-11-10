@@ -118,9 +118,13 @@ reasons, all of which broke motion for real users:
   (e.g. `2` = Motion), so `parse_motion_event` classifies them correctly
   without relying on the ambiguous `evt` flag.
 - **Stable de-dup.** Each entry has a unique `msgID`; we remember
-  `(deviceID, msgID)` so the same event is never re-fired. The seed pass at
-  startup records existing ids without dispatching; the set is cleared on day
-  rollover and capped to stay bounded.
+  `(deviceID, msgID)` so the same event is never re-fired. Each camera's first
+  successful read of each source is a seed pass: it records existing ids
+  without dispatching. Seeding is per camera and per source, so a camera that
+  registers after the others (a second config entry on the same account), or
+  whose first read failed with `1023` because another entry just logged in,
+  doesn't replay its day's log. The set is cleared on day rollover and capped
+  to stay bounded.
 
 The poller also calls:
 
@@ -129,8 +133,8 @@ GET /v3/app/event/new/get { listAllDevice=1 } → { "result": { "device": [ { "e
 ```
 
 Those summary rows are a secondary source only. They are de-duplicated by the
-reported device and local event time (or a stable raw-row fallback), seeded on
-startup without dispatching, and parsed with `imageAlertType` so `evt` still
+reported device and local event time (or a stable raw-row fallback), seeded
+per camera without dispatching, and parsed with `imageAlertType` so `evt` still
 behaves as a read/unread flag rather than the alarm type.
 
 `MotionEventListener` polls every `ALARM_POLL_INTERVAL` (15 s), so worst-case
@@ -211,6 +215,7 @@ python -m unittest discover -s tests -v
 These tests reuse `debug_tools.bootstrap`, load the actual parser, listener
 and coordinator methods, and mock only external services. They require no
 HA server, network calls, camera photos or account credentials. Synthetic
-protocol bytes exercise decoding and rejection, routing, startup seeding,
-event de-duplication, unavailable images and an in-flight still conversion.
+protocol bytes exercise decoding and rejection, routing, per-camera seeding,
+event de-duplication, unavailable images and an in-flight still
+conversion.
 Live hardware and phone rendering still require an end-to-end test.

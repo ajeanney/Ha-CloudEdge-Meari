@@ -8,7 +8,7 @@ import json
 import threading
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from debug_tools.bootstrap import _bootstrap_integration_modules
 
@@ -111,16 +111,37 @@ class MotionSnapshotTests(unittest.TestCase):
         old = {"deviceID": "42", "eventType": 2, "msgID": "old", "imageUrl": IMAGE_URL}
         self.api.get_device_events.side_effect = lambda device, _day: [old] if device == "42" else []
         self.api.get_new_device_events.return_value = []
-        self.listener._poll_device_events(dispatch=False)
+        self.listener._poll_device_events()
         self.received.assert_not_called()
         self.api.download_snapshot.assert_not_called()
         self.api.get_device_events.side_effect = (
             lambda device, _day: [old, dict(old, msgID="new")] if device == "42" else []
         )
-        self.listener._poll_device_events(dispatch=True)
-        self.listener._poll_device_events(dispatch=True)
+        self.listener._poll_device_events()
+        self.listener._poll_device_events()
         self.received.assert_called_once_with("Motion", JPEG)
 
+    def test_camera_registering_after_first_poll_is_seeded_too(self):
+        late = Mock()
+        old = {"deviceID": "44", "eventType": 2, "msgID": "old44"}
+        self.api.get_device_events.side_effect = lambda device, _day: [old] if device == "44" else []
+        self.api.get_new_device_events.return_value = [
+            {"deviceID": "44", "imageAlertType": "2", "devLocalTime": "20261108101010"}
+        ]
+        self.listener._poll_device_events()
+        self.listener.register(44, "late-camera", late, Mock())
+        self.listener._poll_device_events()
+        self.listener._poll_device_events()
+        late.assert_not_called()
+
+    def test_failed_first_read_seeds_on_the_next_success(self):
+        old = {"deviceID": "42", "eventType": 2, "msgID": "old"}
+        self.api.get_device_events.side_effect = RuntimeError("1023")
+        self.api.get_new_device_events.return_value = []
+        self.listener._poll_device_events()
+        self.api.get_device_events.side_effect = lambda device, _day: [old] if device == "42" else []
+        self.listener._poll_device_events()
+        self.received.assert_not_called()
 
 class SnapshotCacheTests(unittest.TestCase):
     """Check event publication order and a conversion already in progress."""
