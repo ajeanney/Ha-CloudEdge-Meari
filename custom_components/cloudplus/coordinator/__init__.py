@@ -290,7 +290,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
 
     def _snap_session_loop(self) -> None:
         self._poll_battery()
-        if self._initial_frame_grab and not self._idle_frame_ready.is_set():
+        if self._idle_grab_allowed and not self._idle_frame_ready.is_set():
             self._run_initial_frame_grab()
 
         last_battery_poll = time.monotonic()
@@ -307,7 +307,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
                 last_status_poll = now
 
             if (
-                self._initial_frame_grab
+                self._idle_grab_allowed
                 and (
                     self._idle_frame_refresh.is_set()
                     or not self._idle_frame_ready.is_set()
@@ -448,7 +448,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         self._join_streamer(join_timeout=1)
 
     def _consume_wake_event(self) -> None:
-        if not self._wake_event.is_set():
+        if not self._wake_requested():
             return
         self._wake_event.clear()
         self._extend_live_deadline()
@@ -538,6 +538,8 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         if self._is_snap:
             self._idle_frame_ready.clear()
             self._idle_frame_refresh.set()
+            if self.charging_mode:
+                self.request_check_in()  # the only still is gone; clients need the new one
             self._idle_stream_reset.set()
             with self._idle_frame_lock:
                 self._idle_video_frame = None

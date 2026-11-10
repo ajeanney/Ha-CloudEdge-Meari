@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from ..api import MeariApiClient
 from ..const import (
+    CONF_CHARGING_MODE,
     CONF_LENS,
     IOT_CODE_BATTERY_PERCENT,
     IOT_CODE_CHARGE_STATUS,
@@ -18,6 +19,28 @@ from ..const import (
     IOT_CODE_VIDEO_ENCRYPTION,
     PTZ_DIRECTIONS,
     STREAM_HOST_MODES,
+)
+from ..meari_commands import (
+    ABNORMAL_NOISE_ENABLE,
+    CRY_DET_ENABLE,
+    FACE_RECOGNITION_SWITCH,
+    FLIGHT_LIGHT_SWITCH,
+    FLIGHT_LINK_LIGHTING_ENABLE,
+    FLIGHT_LINK_SIREN_ENABLE,
+    HUMAN_DET_DAY_ENABLE,
+    HUMAN_DET_ENABLE,
+    HUMAN_DET_NIGHT_ENABLE,
+    HUMAN_TRACK_ENABLE,
+    LASER_SWITCH,
+    LED_ENABLE,
+    MOTION_DET_ENABLE,
+    PET_ALARM_ENABLE,
+    PIR_DET_ENABLE,
+    RECORD_SWITCH,
+    RGB_LIGHT_SWITCH,
+    SMART_DET,
+    SOUND_DET_ENABLE,
+    SOUND_LIGHT_ENABLE,
 )
 from ..p2p_streamer import (
     lens_sources,
@@ -37,6 +60,37 @@ IOT_READ_RETRY_DELAY = 1.0
 # minutes apart) before the failure is logged as a warning; until a read
 # succeeds, the device's settings stay unavailable.
 IOT_READ_WARN_AFTER = 3
+# Settings Charging Mode turns off while it is on, with the names it reports them by:
+# the camera's lights, sensors, detection, recording and motion linkage, which all
+# spend battery. Only the ones that are on are touched, and only those go back on.
+CHARGING_OFF_SETTINGS = {
+    FLIGHT_LIGHT_SWITCH: "Lamp",
+    LED_ENABLE: "Status LED",
+    RGB_LIGHT_SWITCH: "RGB Light",
+    LASER_SWITCH: "Laser Toy",
+    PIR_DET_ENABLE: "PIR Sensor",
+    MOTION_DET_ENABLE: "Motion Detection",
+    SMART_DET: "Smart Detection",
+    HUMAN_DET_ENABLE: "Person Detection",
+    HUMAN_DET_DAY_ENABLE: "Day Person Detection",
+    HUMAN_DET_NIGHT_ENABLE: "Night Person Detection",
+    HUMAN_TRACK_ENABLE: "Human Tracking",
+    FACE_RECOGNITION_SWITCH: "Face Recognition",
+    SOUND_DET_ENABLE: "Sound Detection",
+    CRY_DET_ENABLE: "Crying Detection",
+    ABNORMAL_NOISE_ENABLE: "Abnormal Noise",
+    PET_ALARM_ENABLE: "Pet Alarm",
+    RECORD_SWITCH: "SD Recording",
+    FLIGHT_LINK_LIGHTING_ENABLE: "Floodlight Linkage",
+    FLIGHT_LINK_SIREN_ENABLE: "Siren Linkage",
+    SOUND_LIGHT_ENABLE: "Siren and Flash",
+}
+# Lights and toys Charging Mode turns off but does not turn back on: a lamp left on
+# at night should not come back on when Charging Mode ends at noon.
+CHARGING_OFF_ONLY = frozenset({FLIGHT_LIGHT_SWITCH, RGB_LIGHT_SWITCH, LASER_SWITCH})
+# The camera reports its battery to the cloud only while awake, so Charging Mode,
+# which keeps it asleep, wakes it this often for a short check-in (an idle still grab).
+CHARGING_CHECK_IN_S = 3600.0
 
 
 class CoordinatorStateMixin:
@@ -52,6 +106,9 @@ class CoordinatorStateMixin:
     _camera_video_at = 0.0  # monotonic time of the last keyframe from the camera
     _wake_ended_at: float | None = None  # a real wake ended; the next battery read is dated by it
     _battery_reported_at: float | None = None
+    _check_in_at = 0.0  # monotonic time of the next Charging Mode check-in; 0 = not scheduled
+    _check_in_requested = False
+    _check_in_requested_at = 0.0  # monotonic; a request made during a wake outlives that wake
 
     _latest_image_source: str
     _latest_image_generation: int = 0
@@ -132,17 +189,46 @@ class CoordinatorStateMixin:
         """
         if self._battery_reported_at is None:
             self._battery_reported_at = reported_at.timestamp()
+            self._check_in_at = 0.0  # the next pass schedules the check-in from the restored time
             self._fire_update()
 
     @property
     def motion_wake_enabled(self) -> bool:
         return self._motion_wake_enabled
 
+    @property
+    def charging_mode(self) -> bool:
+        """Charging Mode, saved in the entry options: motion never wakes the camera."""
+        entry = getattr(self, "_entry", None)
+        return bool(entry is not None and entry.options.get(CONF_CHARGING_MODE))
+
+    @property
+    def _motion_wake_held(self) -> bool:
+        return self._sleep_hold or self.charging_mode
+
+    @property
+    def _idle_grab_allowed(self) -> bool:
+        """The idle still grab (at start, its retries, after a quality change) wakes the camera.
+
+        In Charging Mode only a check-in may grab.
+        """
+        return self._initial_frame_grab and (not self.charging_mode or self._check_in_requested)
+
     def _snap_housekeeping(self, battery_interval_passed: bool) -> bool:
-        """Once per snap-loop pass; True means read the battery.
+        """Once per snap-loop pass: request a due Charging Mode check-in; True means read the battery.
 
         The battery is read on its interval and right after a real wake ends.
         """
+        now = time.monotonic()
+        if not self._check_in_at:
+            # An hour after the last battery report (kept across restarts), else an hour from now;
+            # now if there is no still to stream yet (start-up), so stream clients get video.
+            age = 0.0 if self._battery_reported_at is None else max(0.0, time.time() - self._battery_reported_at)
+            if not self._idle_frame_ready.is_set():
+                age = CHARGING_CHECK_IN_S
+            self._check_in_at = now + max(0.0, CHARGING_CHECK_IN_S - age)
+        if self.charging_mode and now >= self._check_in_at and not self._check_in_requested:
+            self.request_check_in()
         return battery_interval_passed or self._wake_ended_at is not None
 
     def _note_camera_video(self) -> None:
@@ -278,7 +364,7 @@ class CoordinatorStateMixin:
         self._motion_wake_enabled = bool(enabled)
         if self._motion_wake_enabled:
             self._sleep_hold = False
-        if self._motion_wake_enabled and self._motion_detected:
+        if self._motion_wake_enabled and self._motion_detected and not self.charging_mode:
             self._wake_event.set()
             self._extend_live_deadline()
             self._set_camera_awake(True)
@@ -335,15 +421,18 @@ class CoordinatorStateMixin:
 
     def ptz_move(self, direction: str) -> bool:
         api = self._api
-        if api is None or direction not in PTZ_DIRECTIONS:
+        if api is None or direction not in PTZ_DIRECTIONS or self.charging_mode:
             return False
         return api.ptz_start(self._sn_num, direction)
 
     def ptz_stop(self) -> bool:
         api = self._api
-        return bool(api and api.ptz_stop(self._sn_num))
+        return bool(api and not self.charging_mode and api.ptz_stop(self._sn_num))
 
     def wake_camera(self) -> None:
+        if self.charging_mode:
+            _LOGGER.info("Wake Camera ignored for %s: Charging Mode is on", self._device_name)
+            return
         self._sleep_hold = False
         self._wake_event.set()
         self._extend_live_deadline()
@@ -357,9 +446,53 @@ class CoordinatorStateMixin:
         so motion wake-ups are held off until the next Wake press.
         """
         self._sleep_hold = True
+        self.end_live_session()
+
+    def end_live_session(self) -> None:
+        """Let the snap loop stop the streamer and mark the camera asleep."""
         self._wake_event.clear()
         self._last_motion_time = 0.0
         self._live_deadline = 0.0
+
+    def charging_settings_on(self) -> list[str]:
+        """The ``CHARGING_OFF_SETTINGS`` codes that are on now (the ones to turn back on later)."""
+        return [str(code) for code in CHARGING_OFF_SETTINGS if self._as_int(self.get_iot_value(code)) == 1]
+
+    def charging_settings_off(self, codes: list[str]) -> list[str]:
+        """Turn the given settings off; return the codes that failed.
+
+        The values go to the Meari cloud; a sleeping camera picks them up when it
+        next connects or wakes.
+        """
+        return self._set_charging_settings(codes, 0, "off")
+
+    def charging_settings_restore(self, codes: list[str]) -> list[str]:
+        """Turn the settings Charging Mode turned off back on; return the codes that failed."""
+        return self._set_charging_settings(codes, 1, "back on")
+
+    def _set_charging_settings(self, codes: list[str], value: int, action: str) -> list[str]:
+        failed = []
+        for code in codes:
+            try:
+                ok = self.set_iot_value(code, value)
+            except (OSError, RuntimeError, ValueError) as exc:
+                _LOGGER.debug("Charging Mode write of IoT setting %s failed: %s", code, exc)
+                ok = False
+            if not ok:
+                failed.append(str(code))
+                _LOGGER.warning(
+                    "Charging Mode could not turn %s %s for %s",
+                    CHARGING_OFF_SETTINGS.get(int(code), f"IoT setting {code}"),
+                    action,
+                    self._device_name,
+                )
+        return failed
+
+    def request_check_in(self) -> None:
+        """Run a Charging Mode check-in (a short still grab) on the next snap-loop pass."""
+        self._check_in_requested_at = time.monotonic()
+        self._check_in_requested = True
+        self._idle_frame_refresh.set()
 
     def register_motion_callback(self, cb: Callable[[], None]) -> Callable[[], None]:
         self._motion_callbacks.append(cb)
@@ -408,9 +541,13 @@ class CoordinatorStateMixin:
         self._camera_awake = awake
         if awake:
             self._awake_since = time.monotonic()
-        elif self._camera_video_at >= self._awake_since:
-            # It really woke, so it reported its battery: read it now, dated by this wake.
-            self._wake_ended_at = time.time()
+        else:
+            if self._check_in_requested_at <= self._awake_since:
+                self._check_in_requested = False  # this wake served it; one asked for during it still runs
+            self._check_in_at = time.monotonic() + CHARGING_CHECK_IN_S
+            if self._camera_video_at >= self._awake_since:
+                # It really woke, so it reported its battery: read it now, dated by this wake.
+                self._wake_ended_at = time.time()
         self._fire_update()
 
     def _set_motion(self, detected: bool, motion_type: str = "") -> None:
@@ -424,15 +561,24 @@ class CoordinatorStateMixin:
             self._fire_update()
 
     def _extend_live_deadline(self, seconds: float | None = None) -> None:
+        if self.charging_mode:
+            return  # the wake paths extend the deadline here (_track_motion checks _motion_wake_held)
         duration = float(seconds if seconds is not None else self._motion_timeout)
         self._live_deadline = max(self._live_deadline, time.monotonic() + duration)
+
+    def _wake_requested(self) -> bool:
+        """A wake is pending. In Charging Mode a stray request (a race with motion) is dropped."""
+        if self.charging_mode and self._wake_event.is_set():
+            self._wake_event.clear()
+            return False
+        return self._wake_event.is_set()
 
     def _track_motion(self, now: float) -> None:
         """Keep a sleeping snap camera live through motion, or let Motion clear."""
         if not self._motion_detected:
             return
         motion_until = self._last_motion_time + float(self._motion_timeout)
-        if self._motion_wake_enabled and not self._sleep_hold:
+        if self._motion_wake_enabled and not self._motion_wake_held:
             self._live_deadline = max(self._live_deadline, motion_until)
         elif now >= motion_until:
             # Only the end of a live session clears Motion, and none runs here.
@@ -450,7 +596,7 @@ class CoordinatorStateMixin:
             self._fire_update()
         self._last_motion_time = time.monotonic()
         self._set_motion(True, motion_type)
-        if self._is_snap and self._motion_wake_enabled and not self._sleep_hold:
+        if self._is_snap and self._motion_wake_enabled and not self._motion_wake_held:
             self._wake_event.set()
             self._extend_live_deadline()
             self._set_camera_awake(True)

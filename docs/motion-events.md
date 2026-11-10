@@ -80,9 +80,9 @@ See [`const.py`](../custom_components/cloudplus/const.py) `ALARM_TYPE_NAMES`
 and `MOTION_ALARM_TYPES` for the active mapping. The motion binary sensor
 fires for any alarm in `MOTION_ALARM_TYPES = {1, 2, 11, 20}` (PIR, Motion,
 Human body, Person). It turns off when the live session it woke ends; when
-motion does not wake the camera (Wake on Motion off, or held asleep by Sleep
-Camera), it turns off once the motion timeout has passed since the last
-event. Alarms in `SOUND_ALARM_TYPES = {6, 7}` (Noise, Baby
+motion does not wake the camera (Wake on Motion off, held asleep by Sleep
+Camera, or Charging Mode on), it turns off once the motion timeout has passed
+since the last event. Alarms in `SOUND_ALARM_TYPES = {6, 7}` (Noise, Baby
 cry) go to a separate **Sound** binary sensor instead (device class `sound`,
 `sound_type` attribute), held on for the motion timeout and never waking the
 camera. It is only created when the camera advertises sound, cry or

@@ -53,7 +53,7 @@ derived from the camera's IoT model:
 | `sensor.py` | Battery, Battery Reported, Charge Status. | Temperature, Humidity, WiFi Signal. |
 | `number.py` | Motion Timeout. | Sensitivities, intervals, brightness, volume… |
 | `select.py` | Stream Host Mode, Stream Quality, Lens (dual-lens cameras). | Day/Night, SD record, anti-flicker… |
-| `switch.py` | Wake on Motion. | LED, PIR, ONVIF, HomeKit, sirens… |
+| `switch.py` | Wake on Motion, Charging Mode (battery cameras). | LED, PIR, ONVIF, HomeKit, sirens… |
 
 IoT entities are gated on `coordinator.supports_iot(feature)` or
 `coordinator.has_iot_code(code)`. `coordinator.iot_capability(name)` preserves
