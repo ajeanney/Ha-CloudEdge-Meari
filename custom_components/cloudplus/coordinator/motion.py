@@ -26,6 +26,9 @@ MQTT_CREDENTIAL_REFRESH_INTERVAL = 600.0
 _MQTT_BAD_CREDENTIAL_CODES = frozenset({4, 5, 134, 135})
 # Cap on remembered event ids so the dedup set can't grow without bound.
 _SEEN_ALARM_CAP = 4000
+# The event entry (with its final imageUrl) appears before the camera finishes
+# uploading the alarm picture, so the first download often fails. Retry ~20 s.
+EVENT_IMAGE_RETRY_DELAYS = (2.0, 3.0, 5.0, 5.0, 5.0)
 _IMAGE_URL_KEYS = (
     "imageUrl",
     "imageURL",
@@ -130,7 +133,11 @@ class MotionEventListener:
         self._client = None
         self._callbacks: list[
             tuple[
-                str, str, Callable[[str, bytes | None], None], Callable[[str], None]
+                str,
+                str,
+                Callable[[str, bytes | None], None],
+                Callable[[str], None],
+                Callable[[bytes], None],
             ]
         ] = []
         self._lock = threading.Lock()
@@ -141,6 +148,8 @@ class MotionEventListener:
         # "<source>:<device_id>" whose first successful read was recorded without
         # dispatching. Per device, so a camera registering later is seeded too.
         self._seeded_sources: set[str] = set()
+        # Bumped per image-bearing alarm, so a late retry can't replace a newer one.
+        self._image_alarm_seq: dict[str, int] = {}
         self._mqtt_connect_warned = False
         self._mqtt_credentials_stale = threading.Event()
         self._last_credential_refresh = float("-inf")
@@ -156,8 +165,9 @@ class MotionEventListener:
         sn_num: str,
         on_motion: Callable[[str, bytes | None], None],
         on_sound: Callable[[str], None],
+        on_image: Callable[[bytes], None],
     ) -> Callable[[], None]:
-        item = (str(device_id), str(sn_num), on_motion, on_sound)
+        item = (str(device_id), str(sn_num), on_motion, on_sound, on_image)
         with self._lock:
             self._callbacks.append(item)
 
@@ -424,13 +434,18 @@ class MotionEventListener:
     def _matching_callbacks(
         self, device_id: str, license_id: str
     ) -> list[
-        tuple[str, Callable[[str, bytes | None], None], Callable[[str], None]]
+        tuple[
+            str,
+            Callable[[str, bytes | None], None],
+            Callable[[str], None],
+            Callable[[bytes], None],
+        ]
     ]:
         with self._lock:
             callbacks = list(self._callbacks)
         return [
-            (registered_sn, on_motion, on_sound)
-            for registered_device_id, registered_sn, on_motion, on_sound in callbacks
+            (registered_sn, on_motion, on_sound, on_image)
+            for registered_device_id, registered_sn, on_motion, on_sound, on_image in callbacks
             if (device_id and device_id == registered_device_id)
             or (not device_id and license_id and license_id == registered_sn)
         ]
@@ -450,7 +465,7 @@ class MotionEventListener:
             return
         callbacks = self._matching_callbacks(device_id, license_id)
         if event["is_sound"]:
-            for _sn, _on_motion, on_sound in callbacks:
+            for _sn, _on_motion, on_sound, _on_image in callbacks:
                 on_sound(str(event["evt_name"]))
             return
 
@@ -459,7 +474,7 @@ class MotionEventListener:
         encrypted_image = (
             self._api.download_snapshot(image_url) if image_url else None
         )
-        for sn_num, on_motion, _on_sound in callbacks:
+        for sn_num, on_motion, _on_sound, _on_image in callbacks:
             event_image = (
                 _decode_event_snapshot(encrypted_image, sn_num)
                 if encrypted_image
@@ -467,3 +482,45 @@ class MotionEventListener:
             )
             on_motion(motion_type, event_image)
 
+        if not image_url or not callbacks:
+            return
+        alarm_key = device_id or license_id
+        with self._lock:
+            seq = self._image_alarm_seq.get(alarm_key, 0) + 1
+            self._image_alarm_seq[alarm_key] = seq
+        if not encrypted_image:
+            threading.Thread(
+                target=self._retry_event_image,
+                args=(image_url, alarm_key, seq, callbacks),
+                name="cloudplus_event_image",
+                daemon=True,
+            ).start()
+
+    def _is_latest_image_alarm(self, alarm_key: str, seq: int) -> bool:
+        with self._lock:
+            return self._image_alarm_seq.get(alarm_key) == seq
+
+    def _retry_event_image(
+        self, image_url: str, alarm_key: str, seq: int, callbacks: list
+    ) -> None:
+        """Install an alarm picture the camera uploaded after its event entry."""
+        for attempt, delay in enumerate(EVENT_IMAGE_RETRY_DELAYS, start=2):
+            if self._stop_poll.wait(delay) or not self._is_latest_image_alarm(
+                alarm_key, seq
+            ):
+                return
+            encrypted_image = self._api.download_snapshot(image_url)
+            if encrypted_image:
+                break
+        else:
+            _LOGGER.debug("Event image for device %s never became available", alarm_key)
+            return
+        if not self._is_latest_image_alarm(alarm_key, seq):
+            return
+        _LOGGER.debug(
+            "Event image for device %s downloaded on attempt %d", alarm_key, attempt
+        )
+        for sn_num, _on_motion, _on_sound, on_image in callbacks:
+            event_image = _decode_event_snapshot(encrypted_image, sn_num)
+            if event_image is not None:
+                on_image(event_image)

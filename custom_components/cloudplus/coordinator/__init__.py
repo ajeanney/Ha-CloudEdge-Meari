@@ -478,7 +478,11 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
             listener = MotionEventListener(api)
             listeners[key] = listener
         self._motion_listener_unsub = listener.register(
-            self._device_id, self._sn_num, self._note_motion, self._note_sound
+            self._device_id,
+            self._sn_num,
+            self._note_motion,
+            self._note_sound,
+            self._note_event_image,
         )
         self._motion_listener = listener
         self._motion_listener_key = key

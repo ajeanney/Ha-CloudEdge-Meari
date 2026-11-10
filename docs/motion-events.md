@@ -197,13 +197,18 @@ Camera attributes expose:
   not establish the age of a delayed cloud event.
 
 A missing URL, failed download or unsupported image still delivers the
-motion callback without a new image. This change adds no event-history
-queries, retry loop, authentication session, notifications or AI processing.
-It deliberately does not pair an image-less MQTT event with an arbitrary
-latest historical event; the regular poller can deliver an image-bearing
-event later. A download can delay motion delivery by the helper's timeout
-(currently ten seconds); offloading downloads would require a separate
-decision about motion/image ordering.
+motion callback without a new image. The event-list entry carries its final
+`imageUrl` (`…-<eventTime>.jpgx3`) before the camera has finished uploading
+the picture, so on a fresh alarm the first download usually fails. The
+listener then retries the same URL in a background thread for about 20 s
+(`EVENT_IMAGE_RETRY_DELAYS`). A late picture is installed through a separate
+image-only callback: it bumps `image_generation` with `image_source: event`
+but does not re-trigger motion or wake the camera. A retry gives up when a
+newer image-bearing alarm for the same camera arrives. The listener does not
+pair an image-less MQTT event with an arbitrary latest historical event; the
+regular poller can deliver an image-bearing event later. The first,
+inline download can delay motion delivery by the helper's timeout (currently
+ten seconds).
 
 ### Offline regression checks
 
@@ -218,6 +223,6 @@ These tests reuse `debug_tools.bootstrap`, load the actual parser, listener
 and coordinator methods, and mock only external services. They require no
 HA server, network calls, camera photos or account credentials. Synthetic
 protocol bytes exercise decoding and rejection, routing, per-camera seeding,
-day rollover, event de-duplication, unavailable images and an in-flight still
-conversion.
+day rollover, event de-duplication, late image uploads, unavailable images and
+an in-flight still conversion.
 Live hardware and phone rendering still require an end-to-end test.
