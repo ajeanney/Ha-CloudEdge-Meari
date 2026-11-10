@@ -538,6 +538,8 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         if self._is_snap:
             self._idle_frame_ready.clear()
             self._idle_frame_refresh.set()
+            if self.charging_mode:
+                self.request_check_in()  # the only still is gone; clients need the new one
             self._idle_stream_reset.set()
             with self._idle_frame_lock:
                 self._idle_video_frame = None

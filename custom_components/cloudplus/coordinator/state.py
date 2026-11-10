@@ -210,7 +210,7 @@ class CoordinatorStateMixin:
     def _idle_grab_allowed(self) -> bool:
         """The idle still grab (at start, its retries, after a quality change) wakes the camera.
 
-        In Charging Mode only the hourly check-in may grab.
+        In Charging Mode only a check-in may grab.
         """
         return self._initial_frame_grab and (not self.charging_mode or self._check_in_requested)
 
@@ -221,10 +221,13 @@ class CoordinatorStateMixin:
         """
         now = time.monotonic()
         if not self._check_in_at:
-            # An hour after the last battery report (kept across restarts), else an hour from now.
+            # An hour after the last battery report (kept across restarts), else an hour from now;
+            # now if there is no still to stream yet (start-up), so stream clients get video.
             age = 0.0 if self._battery_reported_at is None else max(0.0, time.time() - self._battery_reported_at)
+            if not self._idle_frame_ready.is_set():
+                age = CHARGING_CHECK_IN_S
             self._check_in_at = now + max(0.0, CHARGING_CHECK_IN_S - age)
-        elif self.charging_mode and now >= self._check_in_at and not self._check_in_requested:
+        if self.charging_mode and now >= self._check_in_at and not self._check_in_requested:
             self.request_check_in()
         return battery_interval_passed or self._wake_ended_at is not None
 

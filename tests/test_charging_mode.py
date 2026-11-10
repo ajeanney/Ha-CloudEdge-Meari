@@ -251,8 +251,8 @@ class ChargingModeIdleGrabTests(unittest.TestCase):
     def test_start_grabs_a_still_normally(self):
         self.assertEqual(self.grabs(charging=False), 1)
 
-    def test_start_does_not_wake_the_camera_in_charging_mode(self):
-        self.assertEqual(self.grabs(charging=True), 0)
+    def test_start_without_a_still_checks_in_once_in_charging_mode(self):
+        self.assertEqual(self.grabs(charging=True), 1)  # else stream clients get no video until the hourly one
 
     def test_refresh_does_not_wake_the_camera_in_charging_mode(self):
         self.assertEqual(self.grabs(charging=False, refresh=True), 1)
@@ -273,6 +273,8 @@ class ChargingModeCheckInTests(unittest.TestCase):
         coord = make_coordinator(options={CONST.CONF_CHARGING_MODE: charging})
         coord._initial_frame_grab = True
         coord._idle_frame_refresh = threading.Event()
+        coord._idle_frame_ready = threading.Event()
+        coord._idle_frame_ready.set()  # it has a still: only the battery report sets the schedule
         return coord
 
     def test_after_a_restart_the_check_in_follows_the_last_report(self):
@@ -301,7 +303,7 @@ class ChargingModeCheckInTests(unittest.TestCase):
         coord._snap_housekeeping(False)
         self.assertGreater(coord._check_in_at, time.monotonic() + CHARGING_CHECK_IN_S - 5)
         self.assertFalse(coord._check_in_requested)
-        self.assertFalse(coord._idle_grab_allowed)  # a restart does not wake it
+        self.assertFalse(coord._idle_grab_allowed)  # with a still, starting does not wake it
 
     def test_due_check_in_is_requested_once_then_rescheduled_by_the_wake(self):
         coord = self.coordinator()
@@ -315,6 +317,32 @@ class ChargingModeCheckInTests(unittest.TestCase):
         self.assertFalse(coord._check_in_requested)
         self.assertFalse(coord._idle_grab_allowed)
         self.assertGreater(coord._check_in_at, time.monotonic() + CHARGING_CHECK_IN_S - 5)
+
+    def test_no_still_checks_in_once_then_waits_the_hour(self):
+        coord = self.coordinator()
+        coord._idle_frame_ready.clear()
+        coord.restore_battery_reported(datetime.now(timezone.utc) - timedelta(minutes=5))
+        coord._snap_housekeeping(False)
+        self.assertTrue(coord._check_in_requested)
+        coord._set_camera_awake(True)
+        coord._set_camera_awake(False)  # the grab failed: still no still
+        coord._snap_housekeeping(False)
+        self.assertFalse(coord._check_in_requested)  # no retry until the next check-in
+        self.assertGreater(coord._check_in_at, time.monotonic() + CHARGING_CHECK_IN_S - 5)
+
+    def test_quality_change_checks_in_for_a_new_still(self):
+        for charging in (True, False):
+            coord = self.coordinator(charging)
+            coord._vvp_quality = 1
+            coord._video_codec = "h264"
+            coord._codec_params = Mock()
+            coord._reset_live_mux_timing = Mock()
+            coord._stream_restart = threading.Event()
+            coord._idle_stream_reset = threading.Event()
+            coord._idle_frame_lock = threading.Lock()
+            coord.set_vvp_quality(2)
+            self.assertEqual(coord._check_in_requested, charging)
+            self.assertTrue(coord._idle_grab_allowed)  # outside Charging Mode the refresh grabs anyway
 
     def test_any_wake_pushes_the_next_check_in_back(self):
         coord = self.coordinator(charging=False)
