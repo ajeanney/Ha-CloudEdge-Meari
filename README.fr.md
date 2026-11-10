@@ -151,7 +151,8 @@ dynamique découvert à partir des valeurs du modèle IoT de la caméra.
 | Motion              | `binary_sensor` | Alerte PIR / mouvement / IA (personne, animal, colis, etc.). |
 | Camera Awake        | `binary_sensor` | Vrai pendant que la caméra diffuse activement. |
 | Charging            | `binary_sensor` | État de la charge USB (caméras sur batterie). |
-| Battery             | `sensor`        | Pourcentage de charge (caméras sur batterie). |
+| Battery             | `sensor`        | Pourcentage de charge (caméras sur batterie). Lu toutes les 5 minutes et juste après chaque réveil. |
+| Battery Reported    | `sensor`        | Moment où la caméra a transmis la valeur de Battery (horodatage). Les données de batterie de Meari ne sont pas datées et la caméra ne les transmet qu'éveillée : la valeur est datée par la fin du vrai réveil qui l'a précédée. Conservé après un redémarrage de HA (si la caméra s'est réveillée pendant que HA était arrêté, la vraie transmission est plus récente) ; inconnu jusqu'à la première lecture de ce type. |
 | Charge Status       | `sensor`        | Statut textuel Décharge / En charge / Plein. |
 | Wake Camera         | `button`        | Réveille la caméra manuellement. |
 | Sleep Camera        | `button`        | Termine la session live tout de suite. Le capteur Motion continue de se mettre à jour, mais le mouvement ne réveille plus la caméra jusqu'à un appui sur Wake Camera ou l'activation de Wake on Motion. |

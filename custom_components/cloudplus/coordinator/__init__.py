@@ -299,7 +299,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         next_grab_retry = time.monotonic() + idle_retry_s
         while self._running:
             now = time.monotonic()
-            if now - last_battery_poll >= BATTERY_POLL_INTERVAL:
+            if self._snap_housekeeping(now - last_battery_poll >= BATTERY_POLL_INTERVAL):
                 self._poll_battery()
                 last_battery_poll = now
             if now - last_status_poll >= STATUS_POLL_INTERVAL:
@@ -733,7 +733,7 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
             self._idle_video_codec = codec
             self._idle_video_frame = frame
             self._latest_video_kf = frame
-        self._idle_frame_ready.set()
+        self._note_camera_video()
         self._maybe_convert_snapshot(codec, frame)
 
     def _maybe_convert_snapshot(self, codec: str, payload: bytes) -> None:

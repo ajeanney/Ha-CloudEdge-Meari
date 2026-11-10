@@ -143,7 +143,8 @@ discovered from the camera's IoT model values.
 | Motion              | `binary_sensor` | PIR / motion / AI alert (person, pet, package, etc.). |
 | Camera Awake        | `binary_sensor` | True while the camera is actively streaming. |
 | Charging            | `binary_sensor` | USB charging state (battery cameras). |
-| Battery             | `sensor`        | Charge percentage (battery cameras). |
+| Battery             | `sensor`        | Charge percentage (battery cameras). Read every 5 minutes and right after each wake. |
+| Battery Reported    | `sensor`        | When the camera last reported the Battery reading (timestamp). Meari's battery data has no time and the camera only reports while awake, so the reading is dated by the end of the real wake it followed. Kept across HA restarts (if the camera woke while HA was down, the real report is newer); unknown until the first such reading. |
 | Charge Status       | `sensor`        | Discharging / Charging / Full text status. |
 | Wake Camera         | `button`        | Manually wake the camera. |
 | Sleep Camera        | `button`        | End the live session now. Motion keeps updating the Motion sensor but does not wake the camera again until Wake Camera is pressed or Wake on Motion is turned on. |

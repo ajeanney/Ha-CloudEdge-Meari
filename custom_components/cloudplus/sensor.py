@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -123,6 +125,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = []
     if coord.is_battery_camera:
         entities.append(CloudEdgeMeariBatterySensor(coord, entry))
+        entities.append(CloudEdgeMeariBatteryReportedSensor(coord, entry))
         entities.append(CloudEdgeMeariChargeStatusSensor(coord, entry))
     entities.extend(
         CloudEdgeMeariIotSensor(coord, entry, spec)
@@ -148,6 +151,35 @@ class CloudEdgeMeariIotSensor(CloudEdgeMeariIotNumericEntity, SensorEntity):
         self._attr_native_unit_of_measurement = spec.unit
         self._attr_suggested_display_precision = spec.precision
         self._attr_unique_id = f"{coordinator.device_uuid}_iot_sensor_{spec.code}"
+
+
+class CloudEdgeMeariBatteryReportedSensor(CloudEdgeMeariEntity, RestoreSensor):
+    """When the camera last reported the Battery reading.
+
+    Meari's battery data has no timestamp and the camera only reports while
+    awake, so the reading is dated by the end of the real wake it followed.
+    Kept across HA restarts; unknown until the first such reading.
+    """
+
+    _attr_name = "Battery Reported"
+    _attr_icon = "mdi:battery-clock"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(
+        self, coordinator: CloudEdgeMeariCoordinator, entry: ConfigEntry
+    ) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{coordinator.device_uuid}_battery_reported"
+
+    @property
+    def native_value(self) -> datetime | None:
+        return self._coordinator.battery_reported_at
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and isinstance(last.native_value, datetime):
+            self._coordinator.restore_battery_reported(last.native_value)
 
 
 class CloudEdgeMeariChargeStatusSensor(CloudEdgeMeariEntity, SensorEntity):

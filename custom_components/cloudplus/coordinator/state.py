@@ -6,6 +6,7 @@ import logging
 import random
 import socket
 import time
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from ..api import MeariApiClient
@@ -44,6 +45,13 @@ class CoordinatorStateMixin:
     # Set by the Sleep button, cleared by Wake or by turning Wake on Motion on:
     # motion still updates the sensor but does not wake the camera again.
     _sleep_hold = False
+
+    # Battery freshness. Meari's battery data has no timestamp and the camera only
+    # reports while awake, so a reading is dated by the real wake it followed.
+    _awake_since = 0.0  # monotonic time the current awake period started
+    _camera_video_at = 0.0  # monotonic time of the last keyframe from the camera
+    _wake_ended_at: float | None = None  # a real wake ended; the next battery read is dated by it
+    _battery_reported_at: float | None = None
 
     _latest_image_source: str
     _latest_image_generation: int = 0
@@ -110,8 +118,37 @@ class CoordinatorStateMixin:
         return self._battery_charging
 
     @property
+    def battery_reported_at(self) -> datetime | None:
+        """End of the wake the battery reading comes from; None until one is known."""
+        if self._battery_reported_at is None:
+            return None
+        return datetime.fromtimestamp(self._battery_reported_at, timezone.utc)
+
+    def restore_battery_reported(self, reported_at: datetime) -> None:
+        """Battery Reported's time from before an HA restart, unless a newer one is already known.
+
+        If the camera woke while HA was down, the real report is newer, so the
+        restored time can only understate how fresh the reading is.
+        """
+        if self._battery_reported_at is None:
+            self._battery_reported_at = reported_at.timestamp()
+            self._fire_update()
+
+    @property
     def motion_wake_enabled(self) -> bool:
         return self._motion_wake_enabled
+
+    def _snap_housekeeping(self, battery_interval_passed: bool) -> bool:
+        """Once per snap-loop pass; True means read the battery.
+
+        The battery is read on its interval and right after a real wake ends.
+        """
+        return battery_interval_passed or self._wake_ended_at is not None
+
+    def _note_camera_video(self) -> None:
+        """A keyframe came from the camera: it is really awake, so it reports its battery."""
+        self._camera_video_at = time.monotonic()
+        self._idle_frame_ready.set()
 
     @property
     def motion_timeout(self) -> int:
@@ -369,6 +406,11 @@ class CoordinatorStateMixin:
         if self._camera_awake == awake:
             return
         self._camera_awake = awake
+        if awake:
+            self._awake_since = time.monotonic()
+        elif self._camera_video_at >= self._awake_since:
+            # It really woke, so it reported its battery: read it now, dated by this wake.
+            self._wake_ended_at = time.time()
         self._fire_update()
 
     def _set_motion(self, detected: bool, motion_type: str = "") -> None:
@@ -486,6 +528,7 @@ class CoordinatorStateMixin:
         return True
 
     def _poll_battery(self) -> None:
+        woke_at, self._wake_ended_at = self._wake_ended_at, None
         api = self._api
         if not self._is_snap or api is None:
             return
@@ -497,6 +540,10 @@ class CoordinatorStateMixin:
                 changed = self._apply_iot_values(info)
                 changed = self._apply_battery_info(info) or changed
                 changed = self._apply_video_encryption_info(info) or changed
+                percent = self._as_int(self._iot_value(info, IOT_CODE_BATTERY_PERCENT))
+                if woke_at is not None and percent is not None and 0 <= percent <= 100:
+                    self._battery_reported_at = woke_at
+                    changed = True
                 if changed:
                     self._fire_update()
                 return
