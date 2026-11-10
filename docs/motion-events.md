@@ -210,6 +210,12 @@ regular poller can deliver an image-bearing event later. The first,
 inline download can delay motion delivery by the helper's timeout (currently
 ten seconds).
 
+Every motion or sound alarm logs one debug line with its delivery path
+(`mqtt`, `event list`, `event summary`), alarm type, device id, the number of
+matching cameras and the event-image outcome (`downloaded`, `not uploaded yet,
+retrying`, `no URL in event`). Late pictures log `downloaded on attempt N` or
+`never became available`.
+
 ### Offline regression checks
 
 Run from the repository root with Python 3.12+ and the standalone harness

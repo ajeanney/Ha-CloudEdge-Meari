@@ -220,7 +220,7 @@ class MotionEventListener:
                 _LOGGER.debug("MQTT motion listener disconnected: rc=%s", rc)
 
         def on_message(_client, _userdata, msg):
-            self._handle_payload(msg.payload)
+            self._handle_payload(msg.payload, "mqtt")
 
         try:
             client = mqtt.Client(
@@ -394,7 +394,7 @@ class MotionEventListener:
                 continue
             event_id = self._event_id(raw_event, prefix="summary:")
             if self._remember_event(device_id, event_id) and device_id in dispatch_ids:
-                self._handle_payload(json.dumps(raw_event).encode())
+                self._handle_payload(json.dumps(raw_event).encode(), "event summary")
         return True
 
     def _poll_device_events(self) -> bool:
@@ -424,7 +424,7 @@ class MotionEventListener:
                     or ""
                 ).strip()
                 if msg_id and self._remember_event(device_id, msg_id) and dispatch:
-                    self._handle_payload(json.dumps(raw_event).encode())
+                    self._handle_payload(json.dumps(raw_event).encode(), "event list")
 
         summary_ok = self._poll_new_event_summary(devices)
 
@@ -450,7 +450,7 @@ class MotionEventListener:
             or (not device_id and license_id and license_id == registered_sn)
         ]
 
-    def _handle_payload(self, payload: bytes) -> None:
+    def _handle_payload(self, payload: bytes, source: str) -> None:
         try:
             event = parse_motion_event(payload)
         except (ValueError, KeyError, TypeError) as exc:
@@ -465,6 +465,10 @@ class MotionEventListener:
             return
         callbacks = self._matching_callbacks(device_id, license_id)
         if event["is_sound"]:
+            _LOGGER.debug(
+                "Sound alarm %s via %s for device %s (%d camera(s))",
+                event["evt_name"], source, device_id, len(callbacks),
+            )
             for _sn, _on_motion, on_sound, _on_image in callbacks:
                 on_sound(str(event["evt_name"]))
             return
@@ -474,12 +478,24 @@ class MotionEventListener:
         encrypted_image = (
             self._api.download_snapshot(image_url) if image_url else None
         )
+        _LOGGER.debug(
+            "Motion alarm %s via %s for device %s (%d camera(s)); event image: %s",
+            motion_type,
+            source,
+            device_id,
+            len(callbacks),
+            "downloaded" if encrypted_image
+            else "not uploaded yet, retrying" if image_url
+            else "no URL in event",
+        )
         for sn_num, on_motion, _on_sound, _on_image in callbacks:
             event_image = (
                 _decode_event_snapshot(encrypted_image, sn_num)
                 if encrypted_image
                 else None
             )
+            if encrypted_image and event_image is None:
+                _LOGGER.debug("Event image for device %s is not a JPEG", device_id)
             on_motion(motion_type, event_image)
 
         if not image_url or not callbacks:

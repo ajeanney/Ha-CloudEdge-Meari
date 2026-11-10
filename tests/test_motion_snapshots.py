@@ -47,7 +47,7 @@ class MotionSnapshotTests(unittest.TestCase):
     def dispatch(self, **overrides):
         event = {"deviceID": "42", "eventType": 2, "imageUrl": IMAGE_URL}
         event.update(overrides)
-        self.listener._handle_payload(json.dumps({"params": event}).encode())
+        self.listener._handle_payload(json.dumps({"params": event}).encode(), "test")
 
     def test_plain_jpeg_is_unchanged(self):
         self.assertEqual(MOTION._decode_event_snapshot(JPEG, SERIAL), JPEG)
