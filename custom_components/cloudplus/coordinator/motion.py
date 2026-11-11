@@ -317,7 +317,7 @@ class MotionEventListener:
 
     def _reauthenticate_api(self) -> bool:
         try:
-            self._api.login()
+            self._api.relogin()
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             _LOGGER.warning("Motion event reauthentication failed: %s", exc)
             return False

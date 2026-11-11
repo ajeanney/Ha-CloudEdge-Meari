@@ -31,6 +31,9 @@ ordering, source-idle recovery, wake retries) see [streaming.md](streaming.md).
   OpenAPI credentials.
 - Result code `1023` can appear transiently during discovery. The integration
   tries the official fallback discovery paths before treating it as fatal.
+- Every login revokes the tokens of the account's other sessions (`1023` on
+  their next call; the MQTT signature stays valid). The integration therefore
+  shares one HTTP client per account across all its config entries.
 - Battery / "snap" cameras need wake commands before P2P video. The official
   app commonly sends both OpenAPI awaken *and* app remote wake — we do the
   same.

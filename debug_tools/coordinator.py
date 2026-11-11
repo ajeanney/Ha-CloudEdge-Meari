@@ -33,13 +33,9 @@ async def _create_coordinator(args) -> tuple[Any, dict[str, Any], Any]:
     hass = types.SimpleNamespace(loop=loop, data={})
     coord = coordinator_cls(
         hass=hass,
-        email=args.email,
-        password=args.password,
+        api=api,
         device=dev,
         video_password=getattr(args, "video_password", None),
-        country_code=args.country_code,
-        phone_code=args.phone_code,
-        app_profile=args.profile,
         initial_frame_grab=not bool(getattr(args, "skip_initial_grab", False)),
         initial_grab_timeout=12,
         snapshot_conversion_enabled=True,

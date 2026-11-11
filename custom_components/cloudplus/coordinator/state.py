@@ -664,7 +664,7 @@ class CoordinatorStateMixin:
 
     def _reauthenticate_api(self, api: MeariApiClient, context: str) -> bool:
         try:
-            api.login()
+            api.relogin()
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             _LOGGER.debug(
                 "%s reauthentication failed for %s: %s",

@@ -38,6 +38,7 @@ _LOGGER = logging.getLogger(__name__)
 ACCOUNT_ENTRY_ID = "account_entry_id"
 DISABLED_BY_ACCOUNT = "disabled_by_account"
 SUPPRESS_CAMERA_RECREATE = "_suppress_camera_recreate"
+API_CLIENTS = "_api_clients"
 
 PLATFORMS = [
     "camera",
@@ -157,6 +158,26 @@ async def _ensure_camera_entries(
             )
 
 
+def _account_api(hass: HomeAssistant, data: dict) -> MeariApiClient:
+    """Return the cloud client shared by every entry of this account.
+
+    Each Meari login revokes the account's other tokens (resultCode 1023), so
+    one client per entry made the entries log each other out.
+    """
+    key = (
+        data[CONF_EMAIL],
+        data[CONF_PASSWORD],
+        data.get(CONF_COUNTRY_CODE, DEFAULT_COUNTRY_CODE),
+        data.get(CONF_PHONE_CODE, DEFAULT_PHONE_CODE),
+        data.get(CONF_APP_PROFILE, DEFAULT_APP_PROFILE),
+    )
+    # shortcut: never evicted; a removed account's client idles until restart.
+    clients = hass.data[DOMAIN].setdefault(API_CLIENTS, {})
+    if key not in clients:
+        clients[key] = build_api_client(*key)
+    return clients[key]
+
+
 def _account_camera_entries(
     hass: HomeAssistant, account_entry_id: str
 ) -> list[ConfigEntry]:
@@ -249,15 +270,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Account entry (no sn_num) — login + ensure camera sub-entries exist
     # ------------------------------------------------------------------
     if CONF_SN_NUM not in entry.data:
-        email = entry.data[CONF_EMAIL]
-        password = entry.data[CONF_PASSWORD]
-        country_code = entry.data.get(CONF_COUNTRY_CODE, DEFAULT_COUNTRY_CODE)
-        phone_code = entry.data.get(CONF_PHONE_CODE, DEFAULT_PHONE_CODE)
-        app_profile = entry.data.get(CONF_APP_PROFILE, DEFAULT_APP_PROFILE)
-
-        api = build_api_client(email, password, country_code, phone_code, app_profile)
+        api = _account_api(hass, entry.data)
         try:
-            await hass.async_add_executor_job(api.login)
+            await hass.async_add_executor_job(api.relogin)
         except (OSError, ValueError, KeyError, RuntimeError):
             _LOGGER.exception("Account entry %s failed to login", entry.title)
             return False
@@ -317,26 +332,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         return False
 
-    email = entry.data[CONF_EMAIL]
-    password = entry.data[CONF_PASSWORD]
-    country_code = entry.data.get(CONF_COUNTRY_CODE, DEFAULT_COUNTRY_CODE)
-    phone_code = entry.data.get(CONF_PHONE_CODE, DEFAULT_PHONE_CODE)
-    app_profile = entry.data.get(CONF_APP_PROFILE, DEFAULT_APP_PROFILE)
     device = entry.data["device"]
     video_password = str(entry.options.get(CONF_VIDEO_PASSWORD) or "").strip()
 
-    api = build_api_client(email, password, country_code, phone_code, app_profile)
-    await hass.async_add_executor_job(api.login)
+    api = _account_api(hass, entry.data)
+    await hass.async_add_executor_job(api.relogin)
 
     coord = CloudEdgeMeariCoordinator(
         hass,
-        email,
-        password,
+        api,
         device,
         video_password=video_password,
-        country_code=country_code,
-        phone_code=phone_code,
-        app_profile=app_profile,
         entry=entry,
     )
 

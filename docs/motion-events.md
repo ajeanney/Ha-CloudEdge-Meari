@@ -122,7 +122,7 @@ reasons, all of which broke motion for real users:
   successful read of each source is a seed pass: it records existing ids
   without dispatching. Seeding is per camera and per source, so a camera that
   registers after the others (a second config entry on the same account), or
-  whose first read failed with `1023` because another entry just logged in,
+  whose first read failed with `1023` because another client just logged in,
   doesn't replay its day's log. The set is **not** cleared on day rollover:
   the summary rows below outlive the day, and clearing re-fired every
   camera's last alarm at midnight. It is capped instead, dropping the oldest
@@ -152,7 +152,7 @@ motion delivery permanently stopped until Home Assistant restarts.
 
 - If MQTT connect logs `Bad user name or password`, the `mqttSignature` the
   listener holds is no longer accepted: any newer platform login on the
-  account (e.g. another camera entry's coordinator) re-issues it. The apps
+  account (e.g. the phone app) re-issues it. The apps
   treat CONNACK 4 as "logged in on another device" (`loginOnOtherDevices()`)
   and log out. Cloud polling stays active, and the poll thread performs a
   fresh login and hands the new signature to the MQTT client for its next

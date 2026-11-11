@@ -54,7 +54,7 @@ class IotReadRetryTests(unittest.TestCase):
         coord, client = coordinator(), api(AUTH_FAILED, SETTINGS)
         coord.prefetch_lamp(client)
         self.assertEqual(client.get_device_iot_config.call_count, 2)
-        client.login.assert_called_once()
+        client.relogin.assert_called_once()
         self.assertEqual(coord.get_iot_value("1022"), 76)
         self.assertTrue(coord.has_lamp)
         coord._fire_update.assert_called()
@@ -63,7 +63,7 @@ class IotReadRetryTests(unittest.TestCase):
         coord, client = coordinator(), api(AUTH_FAILED, AUTH_FAILED, SETTINGS)
         coord._api = client
         coord._poll_status()
-        self.assertEqual(client.login.call_count, 2)
+        self.assertEqual(client.relogin.call_count, 2)
         self.assertEqual(coord.get_iot_value("1022"), 76)
         self.assertEqual(coord._iot_read_failures, 0)
 
@@ -80,7 +80,7 @@ class IotReadRetryTests(unittest.TestCase):
             return result
 
         client.get_device_iot_config.side_effect = read
-        client.login.side_effect = lambda: calls.append("login")
+        client.relogin.side_effect = lambda: calls.append("login")
         with patch(f"{STATE}.time.sleep", lambda _s: calls.append("sleep")):
             coord.prefetch_lamp(client)
         self.assertEqual(calls, ["read", "sleep", "login", "read", "sleep", "login", "read"])
