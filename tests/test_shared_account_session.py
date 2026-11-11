@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import threading
+import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from debug_tools.bootstrap import _bootstrap_integration_modules
 
 MODULES = _bootstrap_integration_modules()
 API = MODULES["api"]
+COORDINATOR = MODULES["coordinator"].CloudEdgeMeariCoordinator
+COORDINATOR_MODULE = "custom_components.cloudplus.coordinator"
 
 
 def client() -> object:
@@ -49,6 +54,37 @@ class ReloginTests(unittest.TestCase):
             api.relogin()
         api.relogin()
         self.assertEqual(api._do_login.call_count, 2)
+
+
+class SharedMotionListenerTests(unittest.TestCase):
+    def test_cameras_starting_together_share_one_listener(self):
+        hass, api = SimpleNamespace(data={}), object()
+        created = []
+
+        def slow_listener(*_args):
+            time.sleep(0.05)  # widen the get-or-create window
+            listener = Mock()
+            created.append(listener)
+            return listener
+
+        coords = []
+        for index in range(3):
+            coord = COORDINATOR.__new__(COORDINATOR)
+            coord.hass, coord._account_api = hass, api
+            coord._device_id, coord._sn_num = index, f"SN{index}"
+            coord._motion_listener = coord._motion_listener_unsub = None
+            coords.append(coord)
+        with patch(f"{COORDINATOR_MODULE}.MotionEventListener", side_effect=slow_listener):
+            threads = [
+                threading.Thread(target=coord._start_motion_listener, args=(api,))
+                for coord in coords
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].register.call_count, 3)
 
 
 if __name__ == "__main__":

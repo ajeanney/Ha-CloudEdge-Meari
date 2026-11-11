@@ -72,6 +72,9 @@ SNAPSHOT_CARD_REFRESH_INTERVAL = 3.0
 SNAPSHOT_CARD_REQUEST_TTL = 30.0
 
 
+_MOTION_LISTENERS_LOCK = threading.Lock()
+
+
 class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
     """Small runtime coordinator used by debug.py and camera entity."""
 
@@ -448,36 +451,40 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
 
     def _start_motion_listener(self, api: MeariApiClient) -> None:
         self._stop_motion_listener()
-        # One listener per account, keyed by the account's shared client.
-        listeners = self.hass.data.setdefault(DOMAIN, {}).setdefault(
-            "_motion_listeners", {}
-        )
-        listener = listeners.get(api)
-        if listener is None:
-            listener = MotionEventListener(api)
-            listeners[api] = listener
-        self._motion_listener_unsub = listener.register(
-            self._device_id,
-            self._sn_num,
-            self._note_motion,
-            self._note_sound,
-            self._note_event_image,
-        )
-        self._motion_listener = listener
-        self._motion_listener.start()
+        # One listener per account, keyed by the account's shared client. The
+        # cameras start together, so get-or-create must not race: a second
+        # listener means a second MQTT session the broker evicts the first for.
+        with _MOTION_LISTENERS_LOCK:
+            listeners = self.hass.data.setdefault(DOMAIN, {}).setdefault(
+                "_motion_listeners", {}
+            )
+            listener = listeners.get(api)
+            if listener is None:
+                listener = MotionEventListener(api)
+                listeners[api] = listener
+            self._motion_listener_unsub = listener.register(
+                self._device_id,
+                self._sn_num,
+                self._note_motion,
+                self._note_sound,
+                self._note_event_image,
+            )
+            self._motion_listener = listener
+            listener.start()
 
     def _stop_motion_listener(self) -> None:
-        unsub = self._motion_listener_unsub
-        listener = self._motion_listener
-        self._motion_listener_unsub = None
-        self._motion_listener = None
-        if unsub is not None:
-            unsub()
-        if listener is not None and not listener.has_callbacks:
-            listener.stop()
-            listeners = self.hass.data.get(DOMAIN, {}).get("_motion_listeners", {})
-            if listeners.get(self._account_api) is listener:
-                listeners.pop(self._account_api, None)
+        with _MOTION_LISTENERS_LOCK:
+            unsub = self._motion_listener_unsub
+            listener = self._motion_listener
+            self._motion_listener_unsub = None
+            self._motion_listener = None
+            if unsub is not None:
+                unsub()
+            if listener is not None and not listener.has_callbacks:
+                listener.stop()
+                listeners = self.hass.data.get(DOMAIN, {}).get("_motion_listeners", {})
+                if listeners.get(self._account_api) is listener:
+                    listeners.pop(self._account_api, None)
 
     def _start_idle_loop(self) -> None:
         if not self._is_snap:

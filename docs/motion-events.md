@@ -33,7 +33,10 @@ payload shapes to expect.
   to cameras internally. Multiple MQTT sessions with the same user-id /
   client-id can make the broker disconnect older sessions — this is the
   single most common cause of "no motion events in HA": another live login
-  (phone, second HA instance, etc.) is bumping us off.
+  (phone, second HA instance, etc.) is bumping us off. The integration does
+  the same: one `MotionEventListener` per account, keyed by the account's
+  shared API client and created under a lock, because the cameras start
+  together and a racing second listener would evict the first.
 - **The broker pins the MQTT client-id to the numeric user-id.** Connecting
   with any other client-id is rejected with CONNACK *Not authorized* (verified
   against the live EU broker). So we cannot side-step the collision by picking
