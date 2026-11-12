@@ -586,20 +586,23 @@ class CoordinatorStateMixin:
 
     def _note_motion(self, motion_type: str, event_image: bytes | None = None) -> None:
         if event_image:
-            self._latest_image = event_image
-            self._latest_image_source = "event"
-            self._latest_image_generation += 1
-            self._latest_image_updated_at = time.time()
-            # Keep the exact alarm image authoritative while motion is active.
-            # A wake-up may first replay an old keyframe from the previous session.
-            self._last_snapshot_convert_time = time.monotonic()
-            self._fire_update()
+            self._note_event_image(event_image)
         self._last_motion_time = time.monotonic()
         self._set_motion(True, motion_type)
         if self._is_snap and self._motion_wake_enabled and not self._motion_wake_held:
             self._wake_event.set()
             self._extend_live_deadline()
             self._set_camera_awake(True)
+
+    def _note_event_image(self, event_image: bytes) -> None:
+        self._latest_image = event_image
+        self._latest_image_source = "event"
+        self._latest_image_generation += 1
+        self._latest_image_updated_at = time.time()
+        # Keep the exact alarm image authoritative while motion is active.
+        # A wake-up may first replay an old keyframe from the previous session.
+        self._last_snapshot_convert_time = time.monotonic()
+        self._fire_update()
 
     @staticmethod
     def _as_int(value: Any) -> int | None:
@@ -661,7 +664,7 @@ class CoordinatorStateMixin:
 
     def _reauthenticate_api(self, api: MeariApiClient, context: str) -> bool:
         try:
-            api.login()
+            api.relogin()
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             _LOGGER.debug(
                 "%s reauthentication failed for %s: %s",

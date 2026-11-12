@@ -66,7 +66,7 @@ class MqttReconnectTests(unittest.TestCase):
 
         def relogin():
             self.api.mqtt_signature = "new-signature"
-        self.api.login.side_effect = relogin
+        self.api.relogin.side_effect = relogin
         self.assertTrue(self.listener._refresh_stale_mqtt_credentials())
         self.client.username_pw_set.assert_called_with("access", "new-signature")
         self.assertFalse(self.listener._mqtt_credentials_stale.is_set())
@@ -74,7 +74,7 @@ class MqttReconnectTests(unittest.TestCase):
         # A second rejection right away waits for the refresh interval.
         on_connect(self.client, None, {}, SimpleNamespace(value=134), None)
         self.assertFalse(self.listener._refresh_stale_mqtt_credentials())
-        self.assertEqual(self.api.login.call_count, 1)
+        self.assertEqual(self.api.relogin.call_count, 1)
         self.assertTrue(self.listener._mqtt_credentials_stale.is_set())
 
     def test_refresh_resumes_after_interval(self):
@@ -86,17 +86,17 @@ class MqttReconnectTests(unittest.TestCase):
         later = 50.0 + MOTION.MQTT_CREDENTIAL_REFRESH_INTERVAL
         with patch.object(MOTION.time, "monotonic", return_value=later):
             self.assertTrue(self.listener._refresh_stale_mqtt_credentials())
-        self.assertEqual(self.api.login.call_count, 2)
+        self.assertEqual(self.api.relogin.call_count, 2)
 
     def test_other_failures_do_not_log_in(self):
         self.client.on_connect(self.client, None, {}, SimpleNamespace(value=3), None)
         self.assertFalse(self.listener._refresh_stale_mqtt_credentials())
-        self.api.login.assert_not_called()
+        self.api.relogin.assert_not_called()
 
     def test_success_does_not_log_in(self):
         self.client.on_connect(self.client, None, {}, SimpleNamespace(value=0), None)
         self.assertFalse(self.listener._refresh_stale_mqtt_credentials())
-        self.api.login.assert_not_called()
+        self.api.relogin.assert_not_called()
 
 
 if __name__ == "__main__":

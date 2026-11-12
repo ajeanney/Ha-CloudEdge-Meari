@@ -8,7 +8,7 @@ import json
 import threading
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from debug_tools.bootstrap import _bootstrap_integration_modules
 
@@ -33,19 +33,21 @@ class MotionSnapshotTests(unittest.TestCase):
     """Exercise parsing, camera routing and backward-compatible failures."""
 
     def setUp(self):
+        self.enterContext(patch.object(MOTION, "EVENT_IMAGE_RETRY_DELAYS", (0, 0, 0)))
         self.api = Mock()
         self.api.download_snapshot.return_value = obfuscate(JPEG)
         self.listener = MOTION.MotionEventListener(self.api)
         self.received = Mock()
         self.other = Mock()
         self.sound = Mock()
-        self.listener.register(42, SERIAL, self.received, self.sound)
-        self.listener.register(43, "other-camera", self.other, Mock())
+        self.image = Mock()
+        self.listener.register(42, SERIAL, self.received, self.sound, self.image)
+        self.listener.register(43, "other-camera", self.other, Mock(), Mock())
 
     def dispatch(self, **overrides):
         event = {"deviceID": "42", "eventType": 2, "imageUrl": IMAGE_URL}
         event.update(overrides)
-        self.listener._handle_payload(json.dumps({"params": event}).encode())
+        self.listener._handle_payload(json.dumps({"params": event}).encode(), "test")
 
     def test_plain_jpeg_is_unchanged(self):
         self.assertEqual(MOTION._decode_event_snapshot(JPEG, SERIAL), JPEG)
@@ -83,8 +85,36 @@ class MotionSnapshotTests(unittest.TestCase):
 
     def test_failed_download_still_delivers_motion(self):
         self.api.download_snapshot.return_value = None
-        self.dispatch()
+        with patch.object(MOTION.threading, "Thread"):
+            self.dispatch()
         self.received.assert_called_once_with("Motion", None)
+
+    def run_retries(self, downloads):
+        """Dispatch an alarm whose picture isn't uploaded yet; run its retry inline."""
+        self.api.download_snapshot.side_effect = downloads
+        with patch.object(MOTION.threading, "Thread") as thread:
+            self.dispatch()
+            return thread.call_args.kwargs
+
+    def test_late_upload_installs_event_image_without_retriggering_motion(self):
+        retry = self.run_retries([None, None, obfuscate(JPEG)])
+        self.received.assert_called_once_with("Motion", None)
+        retry["target"](*retry["args"])
+        self.image.assert_called_once_with(JPEG)
+        self.received.assert_called_once()
+        self.other.assert_not_called()
+
+    def test_retry_gives_up_quietly(self):
+        retry = self.run_retries([None] * 4)
+        retry["target"](*retry["args"])
+        self.assertEqual(self.api.download_snapshot.call_count, 4)
+        self.image.assert_not_called()
+
+    def test_newer_alarm_cancels_stale_retry(self):
+        retry = self.run_retries([None, obfuscate(JPEG), obfuscate(JPEG)])
+        self.dispatch()  # newer alarm with its own (downloaded) picture
+        retry["target"](*retry["args"])
+        self.image.assert_not_called()
 
     def test_invalid_image_still_delivers_motion(self):
         self.api.download_snapshot.return_value = b"invalid"
@@ -111,15 +141,54 @@ class MotionSnapshotTests(unittest.TestCase):
         old = {"deviceID": "42", "eventType": 2, "msgID": "old", "imageUrl": IMAGE_URL}
         self.api.get_device_events.side_effect = lambda device, _day: [old] if device == "42" else []
         self.api.get_new_device_events.return_value = []
-        self.listener._poll_device_events(dispatch=False)
+        self.listener._poll_device_events()
         self.received.assert_not_called()
         self.api.download_snapshot.assert_not_called()
         self.api.get_device_events.side_effect = (
             lambda device, _day: [old, dict(old, msgID="new")] if device == "42" else []
         )
-        self.listener._poll_device_events(dispatch=True)
-        self.listener._poll_device_events(dispatch=True)
+        self.listener._poll_device_events()
+        self.listener._poll_device_events()
         self.received.assert_called_once_with("Motion", JPEG)
+
+    def test_camera_registering_after_first_poll_is_seeded_too(self):
+        late = Mock()
+        old = {"deviceID": "44", "eventType": 2, "msgID": "old44"}
+        self.api.get_device_events.side_effect = lambda device, _day: [old] if device == "44" else []
+        self.api.get_new_device_events.return_value = [
+            {"deviceID": "44", "imageAlertType": "2", "devLocalTime": "20261108101010"}
+        ]
+        self.listener._poll_device_events()
+        self.listener.register(44, "late-camera", late, Mock(), Mock())
+        self.listener._poll_device_events()
+        self.listener._poll_device_events()
+        late.assert_not_called()
+
+    def test_failed_first_read_seeds_on_the_next_success(self):
+        old = {"deviceID": "42", "eventType": 2, "msgID": "old"}
+        self.api.get_device_events.side_effect = RuntimeError("1023")
+        self.api.get_new_device_events.return_value = []
+        self.listener._poll_device_events()
+        self.api.get_device_events.side_effect = lambda device, _day: [old] if device == "42" else []
+        self.listener._poll_device_events()
+        self.received.assert_not_called()
+
+    def test_day_rollover_does_not_refire_summary_rows(self):
+        summary = {"deviceID": "42", "imageAlertType": "1", "devLocalTime": "20261108235000"}
+        self.api.get_device_events.return_value = []
+        self.api.get_new_device_events.return_value = [summary]
+        with patch.object(MOTION.time, "strftime", return_value="20261108"):
+            self.listener._poll_device_events()
+        with patch.object(MOTION.time, "strftime", return_value="20261109"):
+            self.listener._poll_device_events()
+        self.received.assert_not_called()
+
+    def test_trim_keeps_the_newest_ids(self):
+        with patch.object(MOTION, "_SEEN_ALARM_CAP", 3):
+            for event_id in "abcde":
+                self.listener._remember_event("42", event_id)
+            self.listener._trim_seen_events()
+        self.assertEqual([k[1] for k in self.listener._seen_alarm_keys], ["c", "d", "e"])
 
 
 class SnapshotCacheTests(unittest.TestCase):
@@ -132,6 +201,9 @@ class SnapshotCacheTests(unittest.TestCase):
             _fire_update=Mock(), _set_motion=Mock(), _video_to_jpeg=Mock(return_value=JPEG),
             _snapshot_convert_lock=threading.Lock(),
         )
+        self.coord._note_event_image = lambda image: COORDINATOR._note_event_image(
+            self.coord, image
+        )
 
     def test_event_image_is_available_when_motion_is_published(self):
         def check_image(*_args):
@@ -142,6 +214,12 @@ class SnapshotCacheTests(unittest.TestCase):
         COORDINATOR._note_motion(self.coord, "Motion", JPEG)
         self.coord._set_motion.assert_called_once_with(True, "Motion")
         self.assertEqual(self.coord._latest_image_generation, 1)
+
+    def test_late_event_image_does_not_touch_motion(self):
+        COORDINATOR._note_event_image(self.coord, JPEG)
+        self.assertEqual(self.coord._latest_image_source, "event")
+        self.assertEqual(self.coord._latest_image_generation, 1)
+        self.coord._set_motion.assert_not_called()
 
     def test_missing_image_does_not_claim_new_freshness(self):
         COORDINATOR._note_motion(self.coord, "Motion")

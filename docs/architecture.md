@@ -36,7 +36,7 @@ root if present.
 | `__init__.py` | `async_setup_entry` / `async_unload_entry`, account-vs-camera entry split, V1→V2 migration, PTZ service registration. |
 | `config_flow.py` | User-facing config + options flows. One account entry, N child camera entries created via `SOURCE_IMPORT`. |
 | `const.py` | All config keys, defaults, app-profile list, alarm-type table, IoT codes. |
-| `api.py` | Meari HTTP client — login, device list, IoT model fetch, wake, OpenAPI bridge. |
+| `api.py` | Meari HTTP client — login, device list, IoT model fetch, wake, OpenAPI bridge. One client per account, shared by the account entry, every camera coordinator and the motion listener (`_account_api()` in `__init__.py`): each login revokes the account's other tokens (`1023`), so `relogin()` coalesces callers that fail together into one login. |
 | `manifest.json` | Domain, version, `requirements`, `iot_class`. |
 | `services.yaml` + `strings.json` + `translations/` | Service schemas + UI strings. |
 

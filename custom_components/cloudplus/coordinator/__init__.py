@@ -15,10 +15,7 @@ from ..api import MeariApiClient
 from ..const import (
     CONF_STREAM_HOST_MODE,
     CONF_STREAM_QUALITY,
-    DEFAULT_APP_PROFILE,
-    DEFAULT_COUNTRY_CODE,
     DEFAULT_MOTION_TIMEOUT,
-    DEFAULT_PHONE_CODE,
     DOMAIN,
     STREAM_HOST_MODES,
 )
@@ -75,19 +72,18 @@ SNAPSHOT_CARD_REFRESH_INTERVAL = 3.0
 SNAPSHOT_CARD_REQUEST_TTL = 30.0
 
 
+_MOTION_LISTENERS_LOCK = threading.Lock()
+
+
 class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
     """Small runtime coordinator used by debug.py and camera entity."""
 
     def __init__(
         self,
         hass: HomeAssistant,
-        email: str,
-        password: str,
+        api: MeariApiClient,
         device: dict[str, Any],
         video_password: str | None = None,
-        country_code: str = DEFAULT_COUNTRY_CODE,
-        phone_code: str = DEFAULT_PHONE_CODE,
-        app_profile: str = DEFAULT_APP_PROFILE,
         initial_frame_grab: bool = True,
         initial_grab_timeout: int = 45,
         snapshot_conversion_enabled: bool = True,
@@ -96,15 +92,13 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
     ) -> None:
         self.hass = hass
         self._entry = entry
-        self._email = email
-        self._password = password
+        # Shared by every camera of the account; self._api is only set while a
+        # session runs on it.
+        self._account_api = api
         self._device = device
         self._configured_video_password = (video_password or "").strip()
         self._video_password = self._configured_video_password
         self._video_e2ee_enabled: bool | None = None
-        self._country_code = country_code
-        self._phone_code = phone_code
-        self._app_profile = app_profile
 
         self._device_id = int(device.get("deviceID", 0) or 0)
         self._sn_num = str(device.get("snNum", ""))
@@ -155,7 +149,6 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
         self._p2p_streamer: P2PStreamer | None = None
         self._last_p2p_diagnostics: dict[str, Any] = {}
         self._motion_listener: MotionEventListener | None = None
-        self._motion_listener_key: tuple[str, ...] | None = None
         self._motion_listener_unsub: Callable[[], None] | None = None
         self._wake_event = threading.Event()
         self._idle_stop = threading.Event()
@@ -249,14 +242,8 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
     def _watch_loop(self) -> None:
         while self._running:
             try:
-                api = MeariApiClient(
-                    email=self._email,
-                    password=self._password,
-                    country_code=self._country_code,
-                    phone_code=self._phone_code,
-                    app_profile=self._app_profile,
-                )
-                api.login()
+                api = self._account_api
+                api.relogin()
                 self._api = api
                 self._available = True
                 self._fire_update()
@@ -464,40 +451,40 @@ class CloudEdgeMeariCoordinator(CoordinatorStateMixin):
 
     def _start_motion_listener(self, api: MeariApiClient) -> None:
         self._stop_motion_listener()
-        key = (
-            self._email,
-            self._country_code,
-            self._phone_code,
-            self._app_profile,
-        )
-        listeners = self.hass.data.setdefault(DOMAIN, {}).setdefault(
-            "_motion_listeners", {}
-        )
-        listener = listeners.get(key)
-        if listener is None:
-            listener = MotionEventListener(api)
-            listeners[key] = listener
-        self._motion_listener_unsub = listener.register(
-            self._device_id, self._sn_num, self._note_motion, self._note_sound
-        )
-        self._motion_listener = listener
-        self._motion_listener_key = key
-        self._motion_listener.start()
+        # One listener per account, keyed by the account's shared client. The
+        # cameras start together, so get-or-create must not race: a second
+        # listener means a second MQTT session the broker evicts the first for.
+        with _MOTION_LISTENERS_LOCK:
+            listeners = self.hass.data.setdefault(DOMAIN, {}).setdefault(
+                "_motion_listeners", {}
+            )
+            listener = listeners.get(api)
+            if listener is None:
+                listener = MotionEventListener(api)
+                listeners[api] = listener
+            self._motion_listener_unsub = listener.register(
+                self._device_id,
+                self._sn_num,
+                self._note_motion,
+                self._note_sound,
+                self._note_event_image,
+            )
+            self._motion_listener = listener
+            listener.start()
 
     def _stop_motion_listener(self) -> None:
-        unsub = self._motion_listener_unsub
-        listener = self._motion_listener
-        key = self._motion_listener_key
-        self._motion_listener_unsub = None
-        self._motion_listener = None
-        self._motion_listener_key = None
-        if unsub is not None:
-            unsub()
-        if listener is not None and not listener.has_callbacks:
-            listener.stop()
-            listeners = self.hass.data.get(DOMAIN, {}).get("_motion_listeners", {})
-            if key is not None and listeners.get(key) is listener:
-                listeners.pop(key, None)
+        with _MOTION_LISTENERS_LOCK:
+            unsub = self._motion_listener_unsub
+            listener = self._motion_listener
+            self._motion_listener_unsub = None
+            self._motion_listener = None
+            if unsub is not None:
+                unsub()
+            if listener is not None and not listener.has_callbacks:
+                listener.stop()
+                listeners = self.hass.data.get(DOMAIN, {}).get("_motion_listeners", {})
+                if listeners.get(self._account_api) is listener:
+                    listeners.pop(self._account_api, None)
 
     def _start_idle_loop(self) -> None:
         if not self._is_snap:

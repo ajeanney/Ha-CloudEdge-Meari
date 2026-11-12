@@ -15,7 +15,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.requirements import async_get_integration_with_requirements
 
-from .fake_camera import FakeApiClient, FakeP2PStreamer, build_fake_api_client
+from .fake_camera import FakeP2PStreamer, build_fake_api_client
 
 DOMAIN = "cloudplus_e2e_sim"
 CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
@@ -33,7 +33,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     )
     package.build_api_client = build_fake_api_client
     config_flow.build_api_client = build_fake_api_client
-    coordinator.MeariApiClient = FakeApiClient
     coordinator.P2PStreamer = FakeP2PStreamer
     _LOGGER.warning("cloudplus is running against the simulated camera")
     return True

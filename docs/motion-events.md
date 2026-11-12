@@ -33,7 +33,10 @@ payload shapes to expect.
   to cameras internally. Multiple MQTT sessions with the same user-id /
   client-id can make the broker disconnect older sessions — this is the
   single most common cause of "no motion events in HA": another live login
-  (phone, second HA instance, etc.) is bumping us off.
+  (phone, second HA instance, etc.) is bumping us off. The integration does
+  the same: one `MotionEventListener` per account, keyed by the account's
+  shared API client and created under a lock, because the cameras start
+  together and a racing second listener would evict the first.
 - **The broker pins the MQTT client-id to the numeric user-id.** Connecting
   with any other client-id is rejected with CONNACK *Not authorized* (verified
   against the live EU broker). So we cannot side-step the collision by picking
@@ -118,9 +121,15 @@ reasons, all of which broke motion for real users:
   (e.g. `2` = Motion), so `parse_motion_event` classifies them correctly
   without relying on the ambiguous `evt` flag.
 - **Stable de-dup.** Each entry has a unique `msgID`; we remember
-  `(deviceID, msgID)` so the same event is never re-fired. The seed pass at
-  startup records existing ids without dispatching; the set is cleared on day
-  rollover and capped to stay bounded.
+  `(deviceID, msgID)` so the same event is never re-fired. Each camera's first
+  successful read of each source is a seed pass: it records existing ids
+  without dispatching. Seeding is per camera and per source, so a camera that
+  registers after the others (a second config entry on the same account), or
+  whose first read failed with `1023` because another client just logged in,
+  doesn't replay its day's log. The set is **not** cleared on day rollover:
+  the summary rows below outlive the day, and clearing re-fired every
+  camera's last alarm at midnight. It is capped instead, dropping the oldest
+  ids first.
 
 The poller also calls:
 
@@ -129,8 +138,8 @@ GET /v3/app/event/new/get { listAllDevice=1 } → { "result": { "device": [ { "e
 ```
 
 Those summary rows are a secondary source only. They are de-duplicated by the
-reported device and local event time (or a stable raw-row fallback), seeded on
-startup without dispatching, and parsed with `imageAlertType` so `evt` still
+reported device and local event time (or a stable raw-row fallback), seeded
+per camera without dispatching, and parsed with `imageAlertType` so `evt` still
 behaves as a read/unread flag rather than the alarm type.
 
 `MotionEventListener` polls every `ALARM_POLL_INTERVAL` (15 s), so worst-case
@@ -146,7 +155,7 @@ motion delivery permanently stopped until Home Assistant restarts.
 
 - If MQTT connect logs `Bad user name or password`, the `mqttSignature` the
   listener holds is no longer accepted: any newer platform login on the
-  account (e.g. another camera entry's coordinator) re-issues it. The apps
+  account (e.g. the phone app) re-issues it. The apps
   treat CONNACK 4 as "logged in on another device" (`loginOnOtherDevices()`)
   and log out. Cloud polling stays active, and the poll thread performs a
   fresh login and hands the new signature to the MQTT client for its next
@@ -191,13 +200,24 @@ Camera attributes expose:
   not establish the age of a delayed cloud event.
 
 A missing URL, failed download or unsupported image still delivers the
-motion callback without a new image. This change adds no event-history
-queries, retry loop, authentication session, notifications or AI processing.
-It deliberately does not pair an image-less MQTT event with an arbitrary
-latest historical event; the regular poller can deliver an image-bearing
-event later. A download can delay motion delivery by the helper's timeout
-(currently ten seconds); offloading downloads would require a separate
-decision about motion/image ordering.
+motion callback without a new image. The event-list entry carries its final
+`imageUrl` (`…-<eventTime>.jpgx3`) before the camera has finished uploading
+the picture, so on a fresh alarm the first download usually fails. The
+listener then retries the same URL in a background thread for about 20 s
+(`EVENT_IMAGE_RETRY_DELAYS`). A late picture is installed through a separate
+image-only callback: it bumps `image_generation` with `image_source: event`
+but does not re-trigger motion or wake the camera. A retry gives up when a
+newer image-bearing alarm for the same camera arrives. The listener does not
+pair an image-less MQTT event with an arbitrary latest historical event; the
+regular poller can deliver an image-bearing event later. The first,
+inline download can delay motion delivery by the helper's timeout (currently
+ten seconds).
+
+Every motion or sound alarm logs one debug line with its delivery path
+(`mqtt`, `event list`, `event summary`), alarm type, device id, the number of
+matching cameras and the event-image outcome (`downloaded`, `not uploaded yet,
+retrying`, `no URL in event`). Late pictures log `downloaded on attempt N` or
+`never became available`.
 
 ### Offline regression checks
 
@@ -211,6 +231,7 @@ python -m unittest discover -s tests -v
 These tests reuse `debug_tools.bootstrap`, load the actual parser, listener
 and coordinator methods, and mock only external services. They require no
 HA server, network calls, camera photos or account credentials. Synthetic
-protocol bytes exercise decoding and rejection, routing, startup seeding,
-event de-duplication, unavailable images and an in-flight still conversion.
+protocol bytes exercise decoding and rejection, routing, per-camera seeding,
+day rollover, event de-duplication, late image uploads, unavailable images and
+an in-flight still conversion.
 Live hardware and phone rendering still require an end-to-end test.

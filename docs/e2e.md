@@ -85,8 +85,8 @@ ffmpeg pid, seconds since the last video frame), `ha/home-assistant.log` (cloudp
 
 `tests/e2e/sim/cloudplus_e2e_sim/` is an extra HA component, enabled only in sim
 mode (`cloudplus_e2e_sim:` in `configuration.yaml`). In `async_setup` it
-replaces `build_api_client` (package and config flow), the coordinator's
-`MeariApiClient`, and the coordinator's `P2PStreamer` with fakes. The harness
+replaces `build_api_client` (package and config flow) and the coordinator's
+`P2PStreamer` with fakes. The harness
 adds the cloudplus entry only after HA has started, so the patches are already
 in place.
 

@@ -46,6 +46,9 @@ USER_AGENT = (
     "AppleWebKit/533.1 (KHTML, like Gecko) Version/5.0 Mobile Safari/533.1"
 )
 HTTP_TIMEOUT = (10.0, 30.0)
+# Every login on the account revokes the other tokens (resultCode 1023), so
+# callers of a shared client that fail together must not each log in again.
+RELOGIN_COALESCE_S = 10.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,6 +264,7 @@ class MeariApiClient:
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
         self._request_lock = threading.RLock()
+        self._logged_in_at: float | None = None
 
         self.api_server: str = ""
         self.user_id: Optional[int] = None
@@ -488,6 +492,17 @@ class MeariApiClient:
             self._do_login()
             self._get_iot_config()
             self._get_devices()
+            self._logged_in_at = time.monotonic()
+
+    def relogin(self) -> None:
+        """Log in, unless another user of this client just did."""
+        with self._request_lock:
+            if (
+                self._logged_in_at is not None
+                and time.monotonic() - self._logged_in_at < RELOGIN_COALESCE_S
+            ):
+                return
+            self.login()
 
     def _redirect(self) -> None:
         ts = int(time.time() * 1000)

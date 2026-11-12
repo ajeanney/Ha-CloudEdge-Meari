@@ -89,6 +89,9 @@ class FakeApiClient:
     def login(self) -> bool:
         return True
 
+    def relogin(self) -> None:
+        pass
+
     def get_camera_devices(self) -> list[dict]:
         return [dict(SIM_DEVICE)]
 

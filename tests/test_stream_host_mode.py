@@ -23,7 +23,7 @@ def _coordinator(options: dict) -> COORDINATOR:
     hass = Mock()
     hass.loop.is_closed.return_value = False
     return COORDINATOR(
-        hass, "e", "p", {"snNum": "SN1"}, entry=SimpleNamespace(options=options)
+        hass, Mock(), {"snNum": "SN1"}, entry=SimpleNamespace(options=options)
     )
 
 
