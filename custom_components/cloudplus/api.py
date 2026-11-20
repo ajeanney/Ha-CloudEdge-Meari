@@ -113,6 +113,7 @@ APP_PROFILE_CONFIG: dict[str, AppProfileConfig] = {
         encrypted_login=True,
         vvp_stream_flag=0,
     ),
+    "yesihome": AppProfileConfig("119", "6.2.0", "1061", REDIRECT_URL, "119"),
 }
 
 PLATFORM_REGIONS = {"eu", "us", "as", "cn"}
