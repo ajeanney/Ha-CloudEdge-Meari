@@ -33,6 +33,7 @@ APP_PROFILE_NAMES = {
     "iegeek": "ieGeek",
     "arenti": "Arenti",
     "heimlife": "HeimLife",
+    "yesihome": "YesIHome",
 }
 APP_PROFILES = list(APP_PROFILE_NAMES)
 

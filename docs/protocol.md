@@ -1,8 +1,9 @@
 # Protocol Reference
 
 Wire-level notes for the Meari / VVP / PPStrong stack used by CloudEdge,
-CloudPlus, Meari, ANRAN, ieGeek, Arenti, BoifunCam and HeimLife battery cameras. These
-are the load-bearing facts the integration relies on — change them at your peril.
+CloudPlus, Meari, ANRAN, ieGeek, Arenti, BoifunCam, HeimLife and YesIHome battery
+cameras. These are the load-bearing facts the integration relies on — change
+them at your peril.
 
 For control-flow patterns built on top of these primitives (live-start
 ordering, source-idle recovery, wake retries) see [streaming.md](streaming.md).
@@ -23,6 +24,7 @@ ordering, source-idle recovery, wake retries) see [streaming.md](streaming.md).
   - `boifun` → BoifunCam app identity, VVP stream flag `1`
   - `heimlife` → HeimLife (HeimVision) app identity via the
     `apis.meari.com.cn` redirect host, VVP stream flag `0`
+  - `yesihome` → YesIHome app identity on the CloudEdge API, VVP stream flag `1`
 - Each profile supplies the official app's `sourceApp`, `partnerId`, version
   and version code. These values are part of login account encryption and are
   not interchangeable between branded apps.
@@ -199,7 +201,7 @@ ordering, source-idle recovery, wake retries) see [streaming.md](streaming.md).
   - `0x888e` — heartbeat
 - Modern `START_LIVE` uses parameter `8`, the camera host key, a formatted
   licence ID, a stream id, and the app-profile stream flag (`0` CloudEdge, Arenti
-  and HeimLife / `1` ANRAN, CloudPlus, ieGeek and BoifunCam; see
+  and HeimLife / `1` ANRAN, CloudPlus, ieGeek, BoifunCam and YesIHome; see
   [Discovery](#discovery-and-http-api)). Legacy PPCS authenticates with the
   first 16 host-key bytes and omits the licence component, matching the native
   packet exactly.

@@ -30,9 +30,17 @@ compte :
 - BoifunCam
 - HeimLife (HeimVision)
 - ieGeek
+- YesIHome (paquet Android `com.yesihome.smartlife`)
 
 Ces applications reposent sur la même plateforme Meari, mais le serveur exige
 l'identité propre à chaque application lors de la connexion.
+
+Les essais YesIHome sur une B40FB ont couvert la connexion au compte, la
+découverte de la caméra, la vidéo en direct dans le tableau de bord, l'historique
+des détections et leurs captures, l'état de la batterie et l'affichage du
+réglage de qualité vidéo. Le direct a fonctionné avec l'option Home Assistant
+**Précharger le flux de la caméra** activée. Les commandes PTZ et les autres
+modèles YesIHome restent à valider.
 
 ---
 

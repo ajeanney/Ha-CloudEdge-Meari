@@ -27,9 +27,15 @@ The account profile must match the app used to register the account:
 - BoifunCam
 - HeimLife (HeimVision)
 - ieGeek
+- YesIHome (Android package `com.yesihome.smartlife`)
 
 These apps use the same underlying Meari platform, but the server requires
 each app's own identity during login.
+
+YesIHome was tested on a B40FB with account login, camera discovery, dashboard
+live video, detection history and snapshots, battery reporting, and exposure
+of the video quality setting. Dashboard live video worked with Home Assistant's
+**Preload stream** option enabled. PTZ and other YesIHome models were not tested.
 
 ---
 
